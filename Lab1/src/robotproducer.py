@@ -16,7 +16,7 @@ reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
 
 CACHE_PATH = "../movie_data/embeddings_cache.pkl"
 TOP_K = 10
-MINIMUM_NUM_MOVIES = 2
+MINIMUM_NUM_MOVIES = 4
 
 def load_data():
     df = pd.read_csv("../movie_data/combined.csv")

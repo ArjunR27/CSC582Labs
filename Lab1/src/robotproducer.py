@@ -7,13 +7,21 @@ import ast
 import pickle
 import os
 import torch
+import re
+import random
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
+from nltk.corpus import stopwords
+
+stop_words = set(stopwords.words('english'))
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device=device)
 reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', device=device)
+
+ngram_n = 3
 
 
 CACHE_PATH = "../movie_data/embeddings_cache.pkl"
@@ -176,6 +184,170 @@ def suggest_cast_reranker(overview, matrix, train_df, top_n=N_CAST, candidate_mo
     rerank_scores = reranker.predict(pairs)
     ranked_actors = sorted(zip(actor_names, rerank_scores), key=lambda x: x[1], reverse=True)
     return [name for name, _ in ranked_actors[:top_n]]
+
+
+def ngram_model(titles, n=ngram_n):
+    ngrams = []
+    for title in titles:
+        tokens = nltk.word_tokenize(title.lower()) + ['<END>']
+        for i in range(len(tokens) - n + 1):
+            ngrams.append(tuple(tokens[i:i+n]))
+    
+    return ngrams
+
+# need to ensure that the vocab between titles and overviews is the same because ngram is fit on titles
+def generate_vocabulary(titles, overviews):
+    title_vocab = set()
+    overview_vocab = set()
+
+    for title in titles:
+        for word in nltk.word_tokenize(title.lower()):
+            if word not in stop_words:
+                title_vocab.add(word)
+    
+    for text in overviews:
+        for word in nltk.word_tokenize(text.lower()):
+            overview_vocab.add(word)
+    
+    return title_vocab & overview_vocab
+
+def pick_seed_word(overview, matrix, train_df, lookup):
+    encoded = encode(overview)
+    top_indices, scores = find_similar(encoded, matrix, top_k=10)
+    similar = train_df.iloc[top_indices]
+
+    # collect all valid starting words from lookup keys (works for any n)
+    valid_starters = set()
+    for context in lookup:
+        if context[0] not in stop_words:
+            valid_starters.add(context[0])
+
+    word_scores = {}
+    for (_, row), score in zip(similar.iterrows(), scores):
+        tokens = nltk.word_tokenize(row['original_title'].lower())
+        if not tokens:
+            continue
+        first_word = tokens[0]
+        if first_word in valid_starters:
+            word_scores[first_word] = word_scores.get(first_word, 0) + score
+
+    if word_scores:
+        words = list(word_scores.keys())
+        weights = list(word_scores.values())
+        return random.choices(words, weights=weights)[0]
+
+    # fallback: highest-scored valid starter
+    return max(valid_starters, key=lambda w: sum(s for (_, row), s in zip(similar.iterrows(), scores) if w in row['original_title'].lower()))
+
+
+def create_title_bigram(overview, matrix, train_df):
+    titles = train_df['original_title'].dropna().tolist()
+    ngrams = ngram_model(titles, n=2)
+
+    lookup = {}
+    for ngram in ngrams:
+        context = ngram[:-1]
+        next_word = ngram[-1]
+        if context not in lookup:
+            lookup[context] = []
+        lookup[context].append(next_word)
+
+    seed = pick_seed_word(overview, matrix, train_df, lookup)
+    generated = [seed]
+    context = (seed,)
+
+    while len(generated) < 20:
+        if context not in lookup:
+            break
+        next_words = lookup[context]
+        counts = {}
+        for word in next_words:
+            counts[word] = counts.get(word, 0) + 1
+        next_word = random.choices(list(counts.keys()), weights=list(counts.values()))[0]
+        if next_word == '<END>':
+            break
+        generated.append(next_word)
+        context = (generated[-1],)
+
+    return ' '.join(w.capitalize() for w in generated)
+
+
+def create_title_trigram(overview, matrix, train_df):
+    titles = train_df['original_title'].dropna().tolist()
+
+    trigram_lookup = {}
+    for ngram in ngram_model(titles, n=3):
+        context = ngram[:-1]
+        next_word = ngram[-1]
+        if context not in trigram_lookup:
+            trigram_lookup[context] = []
+        trigram_lookup[context].append(next_word)
+
+    # pick a 2-word seed pair from similar movies' titles
+    encoded = encode(overview)
+    top_indices, scores = find_similar(encoded, matrix, top_k=10)
+    similar = train_df.iloc[top_indices]
+
+    pair_scores = {}
+    for (_, row), score in zip(similar.iterrows(), scores):
+        tokens = nltk.word_tokenize(row['original_title'].lower())
+        if len(tokens) < 2:
+            continue
+        pair = (tokens[0], tokens[1])
+        if pair in trigram_lookup and tokens[0] not in stop_words:
+            pair_scores[pair] = pair_scores.get(pair, 0) + score
+
+    if pair_scores:
+        pairs = list(pair_scores.keys())
+        weights = list(pair_scores.values())
+        seed_pair = random.choices(pairs, weights=weights)[0]
+    else:
+        valid_pairs = [ctx for ctx in trigram_lookup if ctx[0] not in stop_words]
+        seed_pair = random.choice(valid_pairs)
+
+    generated = list(seed_pair)
+
+    while len(generated) < 20:
+        context = (generated[-2], generated[-1])
+        if context not in trigram_lookup:
+            break
+        next_words = trigram_lookup[context]
+        counts = {}
+        for word in next_words:
+            counts[word] = counts.get(word, 0) + 1
+        next_word = random.choices(list(counts.keys()), weights=list(counts.values()))[0]
+        if next_word == '<END>':
+            break
+        generated.append(next_word)
+
+    return ' '.join(w.capitalize() for w in generated)
+
+
+def generate_simple_title(overview):
+    TEMPLATES = [
+    "The {noun}",
+    "{noun} of {noun2}",
+    "The {noun} of {noun2}",
+    "The Last {noun}",
+    "The {noun} Returns",
+    "Rise of the {noun}",
+    ]
+
+    tagged = nltk.pos_tag(nltk.word_tokenize(overview))
+
+    nouns = [w for w, pos in tagged if pos in ('NN', 'NNP') and w.isalpha() and w.lower() not in stop_words]
+    adjs  = [w for w, pos in tagged if pos == 'JJ' and w.isalpha() and w.lower() not in stop_words]
+
+    if not nouns:
+        return "The Movie"
+
+    template = random.choice(TEMPLATES)
+
+    title = template.format(
+        noun=random.choice(nouns).capitalize(),
+        noun2=random.choice(nouns).capitalize(),
+    )
+    return title
 
 
 def score_test_overview(actual_directors, predicted_directors, actual_cast_list, guessed_cast):

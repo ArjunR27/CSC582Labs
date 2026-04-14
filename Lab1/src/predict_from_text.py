@@ -8,6 +8,9 @@ from robotproducer import (
     suggest_cast_reranker,
     suggest_director_reranker,
     train_test_split,
+    create_title_bigram,
+    create_title_trigram,
+    generate_simple_title
 )
 
 
@@ -54,6 +57,14 @@ def main():
     df = load_data()
     train_df, _ = train_test_split(df)
     matrix = load_index(train_df)
+
+    # bigram and trigram do a vector similairty lookup of similar movies and use those similar movie titles as a seed phrase and then generate
+    trigram_title = create_title_trigram(overview, matrix, train_df)
+    bigram_title = create_title_bigram(overview, matrix, train_df)
+    basic_title = generate_simple_title(overview)
+    print("Trigram Title:", trigram_title)
+    print("Bigram Title:", bigram_title)
+    print("Simple Noun Title:", basic_title)
 
     d_reranker = suggest_director_reranker(overview, matrix, train_df)
     cast_reranker = suggest_cast_reranker(

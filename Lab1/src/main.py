@@ -56,6 +56,13 @@ def get_cast_members(cast_text):
     return tuple(cast_with_order)
 
 
+def filter_directors_with_min_movies(df, min_movies):
+    director_counts = df["director"].value_counts(dropna=True)
+    eligible_directors = director_counts[director_counts >= min_movies].index
+    filtered_df = df[df["director"].isin(eligible_directors)].reset_index(drop=True)
+    return filtered_df
+
+
 def predict_director_for_test_row(test_row_position, train_df, train_embeddings, test_embeddings, top_k=5):
     test_vector = test_embeddings[test_row_position]
     if len(test_vector.shape) == 1:
@@ -115,13 +122,13 @@ def evaluate_pipeline(name, combined_df, feature_matrix, top_k=5):
             top5_hit_count += 1
 
 
-        if actual in top5:
-            movie_title = test_df.iloc[i].get("title_x", test_df.iloc[i].get("title", "Unknown"))
-            print(f"Movie: {movie_title}")
-            print(f"Predicted: {predicted}")
-            print(f"Actual: {actual}")
-            print(f"Top 5: {top5}")
-            print("-----")
+        # if actual in top5:
+        #     movie_title = test_df.iloc[i].get("title_x", test_df.iloc[i].get("title", "Unknown"))
+        #     print(f"Movie: {movie_title}")
+        #     print(f"Predicted: {predicted}")
+        #     print(f"Actual: {actual}")
+        #     print(f"Top 5: {top5}")
+        #     print("-----")
         predicted_directors.append(predicted)
         actual_directors.append(actual)
 
@@ -167,9 +174,13 @@ def main():
     combined_df = pd.read_csv("../movie_data/combined.csv")
     combined_df["director"] = combined_df["crew"].apply(get_director)
     combined_df["cast_members"] = combined_df["cast"].apply(get_cast_members)
+    min_movies_per_director = 4
+    combined_df = filter_directors_with_min_movies(combined_df, min_movies_per_director)
+
     unique_directors = combined_df["director"].dropna().nunique()
-    print(f"Unique directors: {unique_directors}")
-    #run_tfidf_pipeline(combined_df)
+    print(f"Unique directors (>= {min_movies_per_director} movies): {unique_directors}")
+    print(f"Rows after filter: {len(combined_df)}")
+    run_tfidf_pipeline(combined_df)
     print(" ========= ")
     run_sentence_bert_pipeline(combined_df)
 

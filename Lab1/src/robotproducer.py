@@ -1,17 +1,19 @@
 import numpy as np
 from tqdm import tqdm
-from collections import defaultdict                                                                                                                                                                       
+from collections import defaultdict
 import pandas as pd
 import nltk
 import ast
 import pickle
 import os
+import torch
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
 from sklearn.metrics.pairwise import cosine_similarity
 
-model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+device = "mps" if torch.backends.mps.is_available() else "cpu"
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device=device)
+reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', device=device)
 
 
 CACHE_PATH = "../movie_data/embeddings_cache.pkl"

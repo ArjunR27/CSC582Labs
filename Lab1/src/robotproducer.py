@@ -212,15 +212,18 @@ def generate_vocabulary(titles, overviews):
     return title_vocab & overview_vocab
 
 def pick_seed_word(overview, matrix, train_df, lookup):
+    valid_starters = {context[0] for context in lookup if context[0] not in stop_words}
+
+    # prefer words taken directly from the input overview
+    overview_tokens = [w for w in nltk.word_tokenize(overview.lower()) if w.isalpha() and w not in stop_words]
+    overview_candidates = [w for w in overview_tokens if w in valid_starters]
+    if overview_candidates:
+        return random.choice(overview_candidates)
+
+    # fallback: score first words of similar movies' titles by cosine similarity
     encoded = encode(overview)
     top_indices, scores = find_similar(encoded, matrix, top_k=10)
     similar = train_df.iloc[top_indices]
-
-    # collect all valid starting words from lookup keys (works for any n)
-    valid_starters = set()
-    for context in lookup:
-        if context[0] not in stop_words:
-            valid_starters.add(context[0])
 
     word_scores = {}
     for (_, row), score in zip(similar.iterrows(), scores):
@@ -236,7 +239,6 @@ def pick_seed_word(overview, matrix, train_df, lookup):
         weights = list(word_scores.values())
         return random.choices(words, weights=weights)[0]
 
-    # fallback: highest-scored valid starter
     return max(valid_starters, key=lambda w: sum(s for (_, row), s in zip(similar.iterrows(), scores) if w in row['original_title'].lower()))
 
 
@@ -283,27 +285,40 @@ def create_title_trigram(overview, matrix, train_df):
             trigram_lookup[context] = []
         trigram_lookup[context].append(next_word)
 
-    # pick a 2-word seed pair from similar movies' titles
-    encoded = encode(overview)
-    top_indices, scores = find_similar(encoded, matrix, top_k=10)
-    similar = train_df.iloc[top_indices]
+    # prefer a 2-word seed pair drawn directly from the input overview
+    overview_tokens = nltk.word_tokenize(overview.lower())
+    overview_pairs = [
+        (overview_tokens[i], overview_tokens[i + 1])
+        for i in range(len(overview_tokens) - 1)
+        if (overview_tokens[i], overview_tokens[i + 1]) in trigram_lookup
+        and overview_tokens[i] not in stop_words
+        and overview_tokens[i].isalpha()
+    ]
 
-    pair_scores = {}
-    for (_, row), score in zip(similar.iterrows(), scores):
-        tokens = nltk.word_tokenize(row['original_title'].lower())
-        if len(tokens) < 2:
-            continue
-        pair = (tokens[0], tokens[1])
-        if pair in trigram_lookup and tokens[0] not in stop_words:
-            pair_scores[pair] = pair_scores.get(pair, 0) + score
-
-    if pair_scores:
-        pairs = list(pair_scores.keys())
-        weights = list(pair_scores.values())
-        seed_pair = random.choices(pairs, weights=weights)[0]
+    if overview_pairs:
+        seed_pair = random.choice(overview_pairs)
     else:
-        valid_pairs = [ctx for ctx in trigram_lookup if ctx[0] not in stop_words]
-        seed_pair = random.choice(valid_pairs)
+        # fallback: score first pairs of similar movies' titles by cosine similarity
+        encoded = encode(overview)
+        top_indices, scores = find_similar(encoded, matrix, top_k=10)
+        similar = train_df.iloc[top_indices]
+
+        pair_scores = {}
+        for (_, row), score in zip(similar.iterrows(), scores):
+            tokens = nltk.word_tokenize(row['original_title'].lower())
+            if len(tokens) < 2:
+                continue
+            pair = (tokens[0], tokens[1])
+            if pair in trigram_lookup and tokens[0] not in stop_words:
+                pair_scores[pair] = pair_scores.get(pair, 0) + score
+
+        if pair_scores:
+            pairs = list(pair_scores.keys())
+            weights = list(pair_scores.values())
+            seed_pair = random.choices(pairs, weights=weights)[0]
+        else:
+            valid_pairs = [ctx for ctx in trigram_lookup if ctx[0] not in stop_words]
+            seed_pair = random.choice(valid_pairs)
 
     generated = list(seed_pair)
 
@@ -336,8 +351,7 @@ def generate_simple_title(overview):
     tagged = nltk.pos_tag(nltk.word_tokenize(overview))
 
     nouns = [w for w, pos in tagged if pos in ('NN', 'NNP') and w.isalpha() and w.lower() not in stop_words]
-    adjs  = [w for w, pos in tagged if pos == 'JJ' and w.isalpha() and w.lower() not in stop_words]
-
+    
     if not nouns:
         return "The Movie"
 

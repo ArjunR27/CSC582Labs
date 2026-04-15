@@ -14,6 +14,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.corpus import stopwords
 
+from evaluation import evaluate_cast_predictions, evaluate_director_retrieval, evaluate_test_overview_scores
 
 stop_words = set(stopwords.words('english'))
 
@@ -22,7 +23,6 @@ model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device=dev
 reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', device=device)
 
 ngram_n = 3
-
 
 CACHE_PATH = "../movie_data/embeddings_cache.pkl"
 TOP_K = 10
@@ -350,11 +350,6 @@ def generate_simple_title(overview):
 
 
 def test():
-    from evaluation import (
-        evaluate_cast_predictions,
-        evaluate_director_retrieval,
-        evaluate_test_overview_scores,
-    )
 
     df = load_data()
     train_df, test_df = train_test_split(df)

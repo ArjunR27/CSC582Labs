@@ -183,6 +183,7 @@ def main():
     run_tfidf_pipeline(combined_df)
     print(" ========= ")
     run_sentence_bert_pipeline(combined_df)
+    
 
 
 if __name__ == "__main__":

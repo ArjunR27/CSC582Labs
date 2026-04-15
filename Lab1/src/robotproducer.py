@@ -149,42 +149,17 @@ def suggest_cast(overview, matrix, train_df, top_n=N_CAST):
 
 
 def suggest_cast_reranker(overview, matrix, train_df, top_n=N_CAST, candidate_movies_k=TOP_K):
-    """
-    Rerank cast candidates with a cross-encoder on (query_overview, actor_context) pairs.
-    Actor contexts are built from the top retrieved training movies.
-    """
     encoded_overview = encode(overview)
-    top_indices, scores = find_similar(encoded_overview, matrix, top_k=candidate_movies_k)
+    top_indices, _ = find_similar(encoded_overview, matrix, top_k=candidate_movies_k)
     candidates = train_df.iloc[top_indices].copy()
 
-    actor_context = defaultdict(list)
-    for (_, movie), sim_score in zip(candidates.iterrows(), scores):
-        movie_title = movie.get('original_title', movie.get('title', 'Unknown'))
-        movie_overview = str(movie.get('overview', ''))
-        overview_snippet = movie_overview[:220].replace("\n", " ")
-
-        # Use top-billed actors from each candidate movie to keep candidate pool focused.
-        for actor_name, order in movie['cast_list']:
-            if order > 9:
-                continue
-            actor_context[actor_name].append(
-                f"title: {movie_title}; billing_order: {order}; sim: {sim_score:.4f}; overview: {overview_snippet}"
-            )
-
-    if not actor_context:
+    if candidates.empty:
         return []
 
-    actor_names = list(actor_context.keys())
-    pairs = []
-    for actor_name in actor_names:
-        context_text = " | ".join(actor_context[actor_name][:3])
-        actor_profile = f"actor: {actor_name}. evidence: {context_text}"
-        pairs.append([overview, actor_profile])
-
+    pairs = [[overview, c['overview']] for _, c in candidates.iterrows()]
     rerank_scores = reranker.predict(pairs)
     ranked_actors = sorted(zip(actor_names, rerank_scores), key=lambda x: x[1], reverse=True)
     return [name for name, _ in ranked_actors[:top_n]]
-
 
 def ngram_model(titles, n=ngram_n):
     ngrams = []
@@ -521,6 +496,12 @@ def evaluate_director_retrieval(test_df, train_df, matrix):
 
 
 def test():
+    from evaluation import (
+        evaluate_cast_predictions,
+        evaluate_director_retrieval,
+        evaluate_test_overview_scores,
+    )
+
     df = load_data()
     train_df, test_df = train_test_split(df)
     matrix = load_index(train_df)

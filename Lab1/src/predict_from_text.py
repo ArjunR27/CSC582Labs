@@ -4,7 +4,6 @@ import os
 from robotproducer import (
     load_data,
     load_index,
-    score_test_overview,
     suggest_cast_reranker,
     suggest_director_reranker,
     train_test_split,
@@ -12,6 +11,7 @@ from robotproducer import (
     create_title_trigram,
     generate_simple_title
 )
+from evaluation import score_test_overview
 
 
 def read_overview(path):

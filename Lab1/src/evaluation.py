@@ -1,15 +1,8 @@
-from tqdm import tqdm
+from robotproducer import N_CAST, suggest_cast, suggest_cast_reranker, suggest_director_reranker, suggest_director, suggest_director_weighted_vote
 
-from robotproducer import N_CAST, suggest_cast, suggest_cast_reranker, suggest_director_reranker
-
-
+# according to scoring rubric on assignment link, 20 for director, 50 for cast, 25 for in top5
 def score_test_overview(actual_directors, predicted_directors, actual_cast_list, guessed_cast):
-    """
-    Scoring rules per test overview:
-      - +20 if predicted director is correct.
-      - +10 per guessed cast member found in full cast list (max 50).
-      - +5 per guessed cast member found in top-5 billed cast (order 0-4, max 25).
-    """
+
     actual_director_set = set(actual_directors)
     predicted_director_set = set(predicted_directors)
 
@@ -34,7 +27,6 @@ def score_test_overview(actual_directors, predicted_directors, actual_cast_list,
 
 
 def evaluate_test_overview_scores(test_df, train_df, matrix):
-    """Compute scoring breakdown for each test overview using reranked director + cast guesses."""
     scores = []
 
     for _, row in test_df.iterrows():
@@ -72,15 +64,12 @@ def evaluate_test_overview_scores(test_df, train_df, matrix):
 
 
 def evaluate_cast_predictions(test_df, train_df, matrix, top_n=N_CAST):
-    """
-    Evaluate cast suggestion quality for both regular suggest_cast and reranker.
-    """
     regular_total_cast_correct = 0
     regular_total_top5_hits = 0
     reranker_total_cast_correct = 0
     reranker_total_top5_hits = 0
 
-    for _, row in tqdm(test_df.iterrows(), total=len(test_df), desc="Evaluating cast"):
+    for _, row in test_df.iterrows():
         actual_cast_list = row["cast_list"]
         overview = row["overview"]
 
@@ -108,7 +97,7 @@ def evaluate_cast_predictions(test_df, train_df, matrix, top_n=N_CAST):
     total_guesses = n * top_n
     total_top5_slots = n * 5
 
-    print("\nCast eval summary")
+    print("Cast eval summary")
     print("Regular suggest_cast")
     print(
         f"total cast correct: {regular_total_cast_correct}/{total_guesses} "
@@ -145,9 +134,7 @@ def evaluate_director_retrieval(test_df, train_df, matrix):
     correct_weighted = 0
     correct_reranker = 0
 
-    from robotproducer import suggest_director, suggest_director_weighted_vote
-
-    for _, row in tqdm(test_df.iterrows(), total=len(test_df), desc="Evaluating"):
+    for _, row in test_df.iterrows():
         actual_directors = row["directors"]
         overview = row["overview"]
 

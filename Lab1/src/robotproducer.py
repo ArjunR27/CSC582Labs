@@ -1,5 +1,4 @@
 import numpy as np
-from tqdm import tqdm
 from collections import defaultdict
 import pandas as pd
 import nltk
@@ -7,13 +6,14 @@ import ast
 import pickle
 import os
 import torch
-import re
+import sys
 import random
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.corpus import stopwords
+
 
 stop_words = set(stopwords.words('english'))
 
@@ -158,8 +158,18 @@ def suggest_cast_reranker(overview, matrix, train_df, top_n=N_CAST, candidate_mo
 
     pairs = [[overview, c['overview']] for _, c in candidates.iterrows()]
     rerank_scores = reranker.predict(pairs)
-    ranked_actors = sorted(zip(actor_names, rerank_scores), key=lambda x: x[1], reverse=True)
-    return [name for name, _ in ranked_actors[:top_n]]
+    candidates['rerank_score'] = rerank_scores
+    candidates = candidates.sort_values('rerank_score', ascending=False)
+
+    actor_scores = defaultdict(float)
+    for _, movie in candidates.iterrows():
+        movie_score = max(float(movie['rerank_score']), 0.0)
+        cast_sorted = sorted(movie['cast_list'], key=lambda x: x[1])
+        for actor_name, order in cast_sorted:
+            actor_scores[actor_name] += movie_score / (order + 1)
+
+    ranked_cast = sorted(actor_scores.items(), key=lambda item: item[1], reverse=True)
+    return [name for name, _ in ranked_cast[:top_n]]
 
 def ngram_model(titles, n=ngram_n):
     ngrams = []
@@ -339,162 +349,6 @@ def generate_simple_title(overview):
     return title
 
 
-def score_test_overview(actual_directors, predicted_directors, actual_cast_list, guessed_cast):
-    """
-    Scoring rules per test overview:
-      - +20 if predicted director is correct.
-      - +10 per guessed cast member found in full cast list (max 50).
-      - +5 per guessed cast member found in top-5 billed cast (order 0-4, max 25).
-    """
-    actual_director_set = set(actual_directors)
-    predicted_director_set = set(predicted_directors)
-
-    director_points = 20 if actual_director_set.intersection(predicted_director_set) else 0
-
-    guessed_cast_set = set(guessed_cast)
-    actual_cast_names = {name for name, _ in actual_cast_list}
-    matched_cast_count = len(guessed_cast_set.intersection(actual_cast_names))
-    cast_points = min(matched_cast_count * 10, 50)
-
-    top5_cast_names = {name for name, order in actual_cast_list if order <= 4}
-    matched_top5_count = len(guessed_cast_set.intersection(top5_cast_names))
-    top5_points = min(matched_top5_count * 5, 25)
-
-    total_points = director_points + cast_points + top5_points
-    return {
-        'director_points': director_points,
-        'cast_points': cast_points,
-        'top5_points': top5_points,
-        'total_points': total_points,
-    }
-
-
-def evaluate_test_overview_scores(test_df, train_df, matrix):
-    """Compute scoring breakdown for each test overview using reranked director + cast guesses."""
-    scores = []
-    actor_point_instances = 0
-
-    for row_idx, row in test_df.iterrows():
-        actual_directors = row['directors']
-        actual_cast_list = row['cast_list']
-        overview = row['overview']
-        movie_title = row.get('original_title', row.get('title', 'Unknown'))
-
-        predicted_director_row = suggest_director_reranker(overview, matrix, train_df)
-        predicted_directors = predicted_director_row['directors']
-        guessed_cast = suggest_cast_reranker(overview, matrix, train_df)
-
-        breakdown = score_test_overview(
-            actual_directors=actual_directors,
-            predicted_directors=predicted_directors,
-            actual_cast_list=actual_cast_list,
-            guessed_cast=guessed_cast,
-        )
-        scores.append(breakdown)
-
-    if scores:
-        total_points = sum(s['total_points'] for s in scores)
-        avg_points = total_points / len(scores)
-        print(f"\nOverview score avg: {avg_points:.2f}/95")
-        print(f"Overview score total: {total_points}/{95 * len(scores)}")
-
-    return scores
-
-
-def evaluate_cast_predictions(test_df, train_df, matrix, top_n=N_CAST):
-    """
-    Evaluate cast suggestion quality against truth on test overviews.
-    Reports overlap and hit-rate metrics.
-    """
-    full_overlap_counts = []
-    top5_overlap_counts = []
-    full_hit_count = 0
-    top5_hit_count = 0
-    total_full_correct = 0
-    total_top5_correct = 0
-
-    for _, row in tqdm(test_df.iterrows(), total=len(test_df), desc="Evaluating cast"):
-        actual_cast_list = row['cast_list']
-        overview = row['overview']
-
-        guessed_cast = suggest_cast_reranker(overview, matrix, train_df, top_n=top_n)
-        guessed_cast_set = set(guessed_cast)
-
-        actual_full_set = {name for name, _ in actual_cast_list}
-        actual_top5_set = {name for name, order in actual_cast_list if order <= 4}
-
-        full_overlap = len(guessed_cast_set.intersection(actual_full_set))
-        top5_overlap = len(guessed_cast_set.intersection(actual_top5_set))
-
-        full_overlap_counts.append(full_overlap)
-        top5_overlap_counts.append(top5_overlap)
-        total_full_correct += full_overlap
-        total_top5_correct += top5_overlap
-
-        if full_overlap > 0:
-            full_hit_count += 1
-        if top5_overlap > 0:
-            top5_hit_count += 1
-
-    n = len(test_df)
-    if n == 0:
-        return {}
-
-    avg_full_overlap = np.mean(full_overlap_counts)
-    avg_top5_overlap = np.mean(top5_overlap_counts)
-    avg_precision_at_n = avg_full_overlap / top_n
-    avg_top5_recall = np.mean([count / 5 for count in top5_overlap_counts])
-    total_guesses = n * top_n
-    total_top5_slots = n * 5
-
-    print(f"\nCorrect actor guesses (full cast): {total_full_correct}/{total_guesses} ({100*total_full_correct/total_guesses:.1f}%)")
-    print(f"Correct actor guesses (top-5 billed): {total_top5_correct}/{total_top5_slots} ({100*total_top5_correct/total_top5_slots:.1f}%)")
-    print(f"\nCast overlap avg (full cast): {avg_full_overlap:.2f}/{top_n}")
-    print(f"Cast overlap avg (top-5 billed): {avg_top5_overlap:.2f}/5")
-    print(f"Avg precision@{top_n} vs full cast: {avg_precision_at_n:.4f}")
-    print(f"Avg recall on top-5 billed cast: {avg_top5_recall:.4f}")
-    print(f"Any full-cast hit rate: {full_hit_count}/{n} ({100*full_hit_count/n:.1f}%)")
-    print(f"Any top-5 billed hit rate: {top5_hit_count}/{n} ({100*top5_hit_count/n:.1f}%)")
-
-    return {
-        'avg_full_overlap': avg_full_overlap,
-        'avg_top5_overlap': avg_top5_overlap,
-        'avg_precision_at_n': avg_precision_at_n,
-        'avg_top5_recall': avg_top5_recall,
-        'total_full_correct': total_full_correct,
-        'total_top5_correct': total_top5_correct,
-        'full_hit_rate': full_hit_count / n,
-        'top5_hit_rate': top5_hit_count / n,
-    }
-
-
-def evaluate_director_retrieval(test_df, train_df, matrix):
-    correct_top1 = 0
-    correct_weighted = 0
-    correct_reranker = 0
-
-    for _, row in tqdm(test_df.iterrows(), total=len(test_df), desc="Evaluating"):
-        actual_directors = row['directors']
-        overview = row['overview']
-
-        d_top1 = suggest_director(overview, matrix, train_df)
-        d_weighted = suggest_director_weighted_vote(overview, matrix, train_df)
-        d_reranker = suggest_director_reranker(overview, matrix, train_df)
-
-        if any(d in d_top1['directors'] for d in actual_directors):
-            correct_top1 += 1
-        if any(d in d_weighted['directors'] for d in actual_directors):
-            correct_weighted += 1
-        if any(d in d_reranker['directors'] for d in actual_directors):
-            correct_reranker += 1
-
-    n = len(test_df)
-    print(f"\nTop-1 cosine:    {correct_top1}/{n} ({100*correct_top1/n:.1f}%)")
-    print(f"Weighted vote:   {correct_weighted}/{n} ({100*correct_weighted/n:.1f}%)")
-    print(f"Reranker:        {correct_reranker}/{n} ({100*correct_reranker/n:.1f}%)")
-    return correct_top1, correct_weighted, correct_reranker
-
-
 def test():
     from evaluation import (
         evaluate_cast_predictions,
@@ -509,35 +363,32 @@ def test():
     evaluate_cast_predictions(test_df, train_df, matrix)
     evaluate_test_overview_scores(test_df, train_df, matrix)
 
+def read_overview(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read().strip()
+
 def main():
+    
+    input_path = sys.argv[1]
+    overview = read_overview(input_path)
+
     df = load_data()
-    train_df, test_df = train_test_split(df)
-    matrix = load_index(train_df)
-    # input_overview = get_input_overview('./test_input.txt')
+    train_df, _ = train_test_split(df)     
+    matrix = load_index(df)     
 
-    input_overview = test_df[['directors', 'overview']].iloc[200]
-    print(input_overview.to_dict())
-    encoded_input_overview = encode(input_overview['overview'])
+    trigram_title = create_title_trigram(overview, matrix, train_df)
 
-    top_indices, scores = find_similar(encoded_input_overview, matrix)                                                                                                                                            
-    candidates = train_df.iloc[top_indices].copy()
-                                                                                                                                                                                                                    
-    # rerank        
-    pairs = [[input_overview['overview'], row['overview']] for _, row in candidates.iterrows()]                                                                                                                   
-    rerank_scores = reranker.predict(pairs)                                                                                                                                                                       
-    candidates['score'] = rerank_scores                                                                                                                                                                           
-                                                                                                                                                                                                                    
-    candidates = candidates.sort_values('score', ascending=False)                                                                                                                                                 
-    results = candidates[['original_title', 'directors', 'score']]
-    print(results)                
+    d_reranker = suggest_director_reranker(overview, matrix, train_df)
+    d_reranker = ", ".join(d_reranker['directors'])
+    cast_reranker = suggest_cast_reranker(overview, matrix, train_df, top_n=20)
+    cast_reranker = ", ".join(cast_reranker)
+    print(" ========================== ")
 
-    # top_indices, scores = find_similar(encoded_input_overview, matrix)
-    
-    # results = train_df.iloc[top_indices][['original_title', 'directors']].copy()
-    # results['score'] = scores
-    
-    # print(results)
-
+    print(f"Title suggestion: {trigram_title}")
+    print(f"\nDirector suggestion: {d_reranker}")
+    print(f"\nCast suggestions: {cast_reranker}")
+       
+    print(" ========================== ")
 
 if __name__ == "__main__":
-    test()
+    main()

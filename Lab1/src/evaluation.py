@@ -6,13 +6,16 @@ def score_test_overview(actual_directors, predicted_directors, actual_cast_list,
     actual_director_set = set(actual_directors)
     predicted_director_set = set(predicted_directors)
 
+    # director matching
     director_points = 20 if actual_director_set.intersection(predicted_director_set) else 0
 
+    # cast matching
     guessed_cast_set = set(guessed_cast)
     actual_cast_names = {name for name, _ in actual_cast_list}
     matched_cast_count = len(guessed_cast_set.intersection(actual_cast_names))
     cast_points = min(matched_cast_count * 10, 50)
 
+    # top 5 matching
     top5_cast_names = {name for name, order in actual_cast_list if order <= 4}
     matched_top5_count = len(guessed_cast_set.intersection(top5_cast_names))
     top5_points = min(matched_top5_count * 5, 25)
@@ -26,6 +29,7 @@ def score_test_overview(actual_directors, predicted_directors, actual_cast_list,
     }
 
 
+# run on entire test set given certain algorithms
 def evaluate_test_overview_scores(test_df, train_df, matrix):
     scores = []
 
@@ -76,12 +80,16 @@ def evaluate_cast_predictions(test_df, train_df, matrix, top_n=N_CAST):
         actual_full_set = {name for name, _ in actual_cast_list}
         actual_top5_set = {name for name, order in actual_cast_list if order <= 4}
 
+        # regular cast function metrics
+
         regular_guessed_cast = suggest_cast(overview, matrix, train_df, top_n=top_n)
         regular_guessed_cast_set = set(regular_guessed_cast)
         regular_full_overlap = len(regular_guessed_cast_set.intersection(actual_full_set))
         regular_top5_overlap = len(regular_guessed_cast_set.intersection(actual_top5_set))
         regular_total_cast_correct += regular_full_overlap
         regular_total_top5_hits += regular_top5_overlap
+
+        # reranker cast function metrics
 
         reranker_guessed_cast = suggest_cast_reranker(overview, matrix, train_df, top_n=top_n)
         reranker_guessed_cast_set = set(reranker_guessed_cast)

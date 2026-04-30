@@ -62,6 +62,10 @@ class PersonalityBot(SingleServerIRCBot):
         else:
             conn.privmsg(channel, f"{author}: No users found.")
     
+    def handle_hello(self, conn, channel, author):
+        conn.privmsg(channel, f"Hi {author}!")
+
+    
     def on_pubmsg(self, conn, event):
         if not event.arguments:
             return
@@ -88,6 +92,7 @@ class PersonalityBot(SingleServerIRCBot):
                 "forget": self.handle_forget,
                 "who are you?": self.handle_usage,
                 "usage": self.handle_usage,
+                "hello": self.handle_hello,
             }
 
             print(command_name)
@@ -100,7 +105,10 @@ class PersonalityBot(SingleServerIRCBot):
                 return
             elif command_name == "who":
                 self.handle_who_are_you(conn, self.channel, author)
-                return                
+                return      
+            elif command_name == "hello":
+                self.handle_hello(conn, self.channel, author)
+                return          
 
 
 

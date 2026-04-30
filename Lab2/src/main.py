@@ -97,15 +97,19 @@ class PersonalityBot(SingleServerIRCBot):
 
             print(command_name)
             
+            # The chatbot must kill itself when command “die” is given to it (preceded by its name followed by colon).
             if command_name == "die":
                 self.handle_die(conn, self.channel, author)
                 return
+            # The chatbot must be able to get a list of other participants in the channel.
             elif command_name == "users":
                 self.handle_users(conn, self.channel, author)
                 return
             elif command_name == "who":
                 self.handle_who_are_you(conn, self.channel, author)
                 return      
+            # As a bare minimum conversation starter, the chatbot must respond to a “hello” utterance directed to it, with another hello to the same source that greeted it first. 
+            # If the chatbot itself had initiated the greeting, it must not respond to the response.
             elif command_name == "hello":
                 self.handle_hello(conn, self.channel, author)
                 return          

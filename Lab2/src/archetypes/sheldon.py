@@ -21,3 +21,6 @@ class Sheldon():
     
     def say(self, msg):
         self.conn.privmsg(self.channel, msg)
+    
+    def personality_tick(self):
+        return

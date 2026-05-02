@@ -68,8 +68,21 @@ class Angel():
 
     def on_user_joined(self, nick):
         join_time = datetime.now().strftime("%H:%M:%S")
-        self.knowledge[nick] = join_time
+        self.knowledge[nick] = f"joined at {join_time}"
         self.say(f"Oh... Did {nick} just join this channel? They did right? Someone please tell me they did.")
+
+    def on_user_left(self, nick):
+        left_time = datetime.now().strftime("%H:%M:%S")
+        self.knowledge[nick] = f"left at {left_time}"
+        self.say(f"W-wait... did {nick} just leave? They're gone aren't they... aren't they?")
+
+    def get_who_left(self):
+        left = {nick: status for nick, status in self.knowledge.items() if status.startswith("left")}
+        if left:
+            summary = ", ".join(f"{nick} ({status})" for nick, status in left.items())
+            self.say(f"S-so... the people who left are... {summary}... that's right isn't it?")
+        else:
+            self.say("I-I don't think anyone has left yet... or did they? Did someone leave and I missed it?!")
     
     def current_day_and_time(self):
         now = datetime.now()

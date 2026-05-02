@@ -17,6 +17,12 @@ import random
 import requests
 import spacy
 nlp = spacy.load("en_core_web_sm")
+from groq import Groq
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 WEATHER_CODES = {
     0: "clear sky",
@@ -63,8 +69,41 @@ class Angel():
     def get_name(self):
         return self.name
     
-    def say(self, msg):
-        self.conn.privmsg(self.channel, msg)
+    def ask_llm(self, prompt):
+        context = str(self.knowledge)
+        response = client.chat.completions.create(
+            model='llama-3.1-8b-instant',
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"""
+                        You are a personality named Angel. You are insecure, repetitive, and need constant reassurance.
+                        You are
+                        - very talkative
+                        - volunteers information unsolicited
+                        - retelling of trivial facts
+                        - asks very obvious questions
+                        - restates obvious facts and asks for confirmation
+
+                        Specifically your information should come from the following context: {context}
+                    """,
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+        )
+        return response.choices[0].message.content
+
+    def say(self, msg, use_llm=False):
+        if not use_llm:
+            self.conn.privmsg(self.channel, msg)
+        else:
+            response = self.ask_llm(msg)
+            self.conn.privmsg(self.channel, response)
+
+
 
     def on_user_joined(self, nick):
         join_time = datetime.now().strftime("%H:%M:%S")

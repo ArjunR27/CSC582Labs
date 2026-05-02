@@ -3,6 +3,7 @@ import sys
 from archetypes import angel
 import random
 
+
 # CHANNEL = "#CSC582"
 CHANNEL = "#CSC582Testing"
 
@@ -27,7 +28,8 @@ class PersonalityBot(SingleServerIRCBot):
     # Schedules the personalities own 'tick' every 3-5 seconds
     # will change depending on the current personality
     def _schedule_tick(self):
-        delay = random.uniform(3, 5)
+        # can change the delay
+        delay = random.uniform(25, 30)
         self.reactor.scheduler.execute_after(delay, self._personality_tick)
 
     def _personality_tick(self):
@@ -141,6 +143,20 @@ class PersonalityBot(SingleServerIRCBot):
                 return
             elif command_name == "switch":
                 self.handle_switch(conn, self.channel, command_query)
+            else:
+                self.on_pubmsg_personalities(command_text)
+            
+    
+    def on_pubmsg_personalities(self, command):
+        if self.current_personality:
+            # Angel Commands
+            if self.current_personality.get_name() == 'angel':
+                if 'weather' in command:
+                    self.current_personality.get_weather(command)
+            
+            # Rest of personalities
+
+
 
 
 if __name__ == "__main__":

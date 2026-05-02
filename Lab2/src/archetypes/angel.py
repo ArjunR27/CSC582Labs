@@ -14,6 +14,20 @@ Data Source
 
 from datetime import datetime
 import random
+import requests
+import spacy
+nlp = spacy.load("en_core_web_sm")
+
+WEATHER_CODES = {
+    0: "clear sky",
+    1: "mainly clear", 2: "partly cloudy", 3: "overcast",
+    45: "foggy", 48: "icy fog",
+    51: "light drizzle", 53: "drizzle", 55: "heavy drizzle",
+    61: "light rain", 63: "rain", 65: "heavy rain",
+    71: "light snow", 73: "snow", 75: "heavy snow",
+    80: "light showers", 81: "showers", 82: "heavy showers",
+    95: "thunderstorm",
+}
 
 class Angel():
     def __init__(self, conn, channel, bot):
@@ -39,11 +53,46 @@ class Angel():
         now = datetime.now()
         formatted_now = now.strftime("%A, %B %d, %Y %H:%M:%S")
         self.say(f"T-the current d-day and time is... Oh I think it's this: {formatted_now}... I hope i'm not wrong ")
-
     
+    def parse_city(self, command):
+        doc = nlp(command)
+        for ent in doc.ents:
+            if ent.label_ == "GPE":
+                return ent.text
+        return None
+
+    def get_weather(self, command):
+        city = self.parse_city(command)
+        if city:
+            geo = requests.get(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                params={"name": city, "count": 1}
+            ).json()
+
+            loc = geo['results'][0]
+            lat, lon = loc['latitude'], loc['longitude']
+
+            weather = requests.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params = {
+                    'latitude': lat,
+                    'longitude': lon,
+                    "current_weather": True,
+                    "temperature_unit": "fahrenheit"
+                }
+            ).json()
+
+            cw = weather['current_weather']
+            condition = WEATHER_CODES.get(cw["weathercode"], "unknown conditions")
+            self.say(f"Oh the cc-current weather in {city}, i-is is.... Temp: {cw['temperature']}°F, and {condition}. But I can't go o-outside and check so i'm not 100% s-s-sure :(")
+        else:
+            self.say("W-wait... where exactly? I couldn't figure out the city... did you mention one? You did right?")
+
+
     def personality_tick(self):
         options = [
-            self.current_day_and_time
+            self.current_day_and_time,
+            lambda: self.get_weather("weather in San Luis Obispo")
         ]
 
         random.choice(options)()

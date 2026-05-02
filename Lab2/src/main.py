@@ -1,6 +1,7 @@
 from irc.bot import SingleServerIRCBot
 import sys
-import spacy
+from archetypes import angel
+import random
 
 # CHANNEL = "#CSC582"
 CHANNEL = "#CSC582Testing"
@@ -8,24 +9,46 @@ CHANNEL = "#CSC582Testing"
 class PersonalityBot(SingleServerIRCBot):
     SERVER = 'irc.libera.chat'
     PORT = 6667
+    ALLOWED_PERSONALITIES = set(['angel', 'guss', 'tweety', 'sheldon', 'abraham', 'quimby', 'normal'])
 
     def __init__(self, channel, nickname):
         super().__init__([(self.SERVER, self.PORT)], nickname, nickname)
         self.channel = channel
         self.nickname = nickname
         self.knowledge = {}
+        self.current_personality = None
+        self.PERSONALITIES = {}
     
     def on_welcome(self, conn, event):
         self.conn = conn
         conn.join(self.channel)
+        self._schedule_tick()
+    
+    # Schedules the personalities own 'tick' every 3-5 seconds
+    # will change depending on the current personality
+    def _schedule_tick(self):
+        delay = random.uniform(3, 5)
+        self.reactor.scheduler.execute_after(delay, self._personality_tick)
+
+    def _personality_tick(self):
+        if self.current_personality:
+            self.current_personality.personality_tick()
+        self._schedule_tick()
     
     def on_join(self, conn, event):
         if event.source.nick == conn.get_nickname():
             print("hello")
             conn.privmsg(self.channel, f"I have joined the channel!")
+            return
+
+        if self.current_personality:
+            match self.current_personality.get_name():
+                case 'angel':
+                    self.current_personality.on_user_joined(event.source.nick)
     
     # That chatbot is expected to respond to any utterance in the channel that begins with its name followed by an immediate colon (:) symbol.
-    def parse_privmsg(self, text, botnick, channel):
+    def parse_privmsg(self, conn, text, botnick, channel):
+        botnick = conn.get_nickname()
         bot_prefix = f"{botnick}:"
         if text.lower().startswith(bot_prefix.lower()):
             command = text[len(bot_prefix):].strip()
@@ -43,11 +66,10 @@ class PersonalityBot(SingleServerIRCBot):
     
     def handle_who_are_you(self, conn, channel, author):
         conn.privmsg(channel, f"{author}: My name is {self.nickname}. I was created by Sid and Arjun in CSC-582")
-        conn.privmsg(
-            channel,
-         (f"{author} I am a chatbot with multiple different personalities!")
-        )
-    
+        conn.privmsg(channel, "I am a chatbot with multiple different personalities!")
+        conn.privmsg(channel, "Personalities: Angel, Guss, Tweety, Sheldon, Abraham, Quimby")
+        conn.privmsg(channel, "To switch, type: ASP-bot: switch [name]")
+        
     def handle_forget(self, conn, channel, author):
         self.knowledge = {}
         conn.privmsg(channel, f"{author}: forgetting everything")
@@ -64,8 +86,21 @@ class PersonalityBot(SingleServerIRCBot):
     
     def handle_hello(self, conn, channel, author):
         conn.privmsg(channel, f"Hi {author}!")
-
     
+    def handle_switch(self, conn, channel, personality):
+        if personality.lower() in self.PERSONALITIES:
+            self.current_personality = self.PERSONALITIES[personality]
+        else:
+            if personality.lower() in self.ALLOWED_PERSONALITIES:
+                if personality.lower() == 'angel':
+                    conn.privmsg(channel, "Requested a change to Angel!")
+                    self.current_personality = angel.Angel(conn, channel, self)
+                    self.PERSONALITIES[personality] = self.current_personality
+                if personality.lower() == 'normal':
+                    conn.privmsg(channel, 'Requested a change to base personality!')
+                    self.current_personality = None
+
+
     def on_pubmsg(self, conn, event):
         if not event.arguments:
             return
@@ -77,7 +112,7 @@ class PersonalityBot(SingleServerIRCBot):
             return
         
         # Commands take priority - check if this is a command first
-        command_text = self.parse_privmsg(text, self.nickname, self.channel)
+        command_text = self.parse_privmsg(conn, text, self.nickname, self.channel)
         if command_text:
             command_lower = command_text.lower().strip()
             
@@ -85,23 +120,27 @@ class PersonalityBot(SingleServerIRCBot):
             parts = command_text.split(None, 1)
             command_name = parts[0].lower()
             command_query = parts[1] if len(parts) > 1 else ""
+
+            print(command_name, command_query)
             
-            COMMANDS = {
+            BASE_COMMANDS = {
                 # The chatbot must kill itself when command “die” is given to it (preceded by its name followed by colon).
                 "die": self.handle_die,
                 # The chatbot must be able to get a list of other participants in the channel.
                 "users": self.handle_users,
                 "forget": self.handle_forget,
-                "who are you?": self.handle_usage,
+                "who": self.handle_usage,
                 "usage": self.handle_usage,
                 # As a bare minimum conversation starter, the chatbot must respond to a “hello” utterance directed to it, with another hello to the same source that greeted it first. 
                 # If the chatbot itself had initiated the greeting, it must not respond to the response.
                 "hello": self.handle_hello,
             }
 
-            if command_name in COMMANDS:
-                COMMANDS[command_name](conn, self.channel, author)
+            if command_name in BASE_COMMANDS:
+                BASE_COMMANDS[command_name](conn, self.channel, author)
                 return
+            elif command_name == "switch":
+                self.handle_switch(conn, self.channel, command_query)
 
 
 if __name__ == "__main__":

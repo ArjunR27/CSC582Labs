@@ -87,33 +87,21 @@ class PersonalityBot(SingleServerIRCBot):
             command_query = parts[1] if len(parts) > 1 else ""
             
             COMMANDS = {
+                # The chatbot must kill itself when command “die” is given to it (preceded by its name followed by colon).
                 "die": self.handle_die,
+                # The chatbot must be able to get a list of other participants in the channel.
                 "users": self.handle_users,
                 "forget": self.handle_forget,
                 "who are you?": self.handle_usage,
                 "usage": self.handle_usage,
+                # As a bare minimum conversation starter, the chatbot must respond to a “hello” utterance directed to it, with another hello to the same source that greeted it first. 
+                # If the chatbot itself had initiated the greeting, it must not respond to the response.
                 "hello": self.handle_hello,
             }
 
-            print(command_name)
-            
-            # The chatbot must kill itself when command “die” is given to it (preceded by its name followed by colon).
-            if command_name == "die":
-                self.handle_die(conn, self.channel, author)
+            if command_name in COMMANDS:
+                COMMANDS[command_name](conn, self.channel, author)
                 return
-            # The chatbot must be able to get a list of other participants in the channel.
-            elif command_name == "users":
-                self.handle_users(conn, self.channel, author)
-                return
-            elif command_name == "who":
-                self.handle_who_are_you(conn, self.channel, author)
-                return      
-            # As a bare minimum conversation starter, the chatbot must respond to a “hello” utterance directed to it, with another hello to the same source that greeted it first. 
-            # If the chatbot itself had initiated the greeting, it must not respond to the response.
-            elif command_name == "hello":
-                self.handle_hello(conn, self.channel, author)
-                return          
-
 
 
 if __name__ == "__main__":

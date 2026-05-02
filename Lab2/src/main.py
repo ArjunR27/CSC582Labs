@@ -47,6 +47,24 @@ class PersonalityBot(SingleServerIRCBot):
             match self.current_personality.get_name():
                 case 'angel':
                     self.current_personality.on_user_joined(event.source.nick)
+
+    def on_part(self, conn, event):
+        nick = event.source.nick
+        if nick == conn.get_nickname():
+            return
+        if self.current_personality:
+            match self.current_personality.get_name():
+                case 'angel':
+                    self.current_personality.on_user_left(nick)
+
+    def on_quit(self, conn, event):
+        nick = event.source.nick
+        if nick == conn.get_nickname():
+            return
+        if self.current_personality:
+            match self.current_personality.get_name():
+                case 'angel':
+                    self.current_personality.on_user_left(nick)
     
     # That chatbot is expected to respond to any utterance in the channel that begins with its name followed by an immediate colon (:) symbol.
     def parse_privmsg(self, conn, text, botnick, channel):
@@ -131,7 +149,6 @@ class PersonalityBot(SingleServerIRCBot):
                 # The chatbot must be able to get a list of other participants in the channel.
                 "users": self.handle_users,
                 "forget": self.handle_forget,
-                "who": self.handle_usage,
                 "usage": self.handle_usage,
                 # As a bare minimum conversation starter, the chatbot must respond to a “hello” utterance directed to it, with another hello to the same source that greeted it first. 
                 # If the chatbot itself had initiated the greeting, it must not respond to the response.
@@ -149,12 +166,24 @@ class PersonalityBot(SingleServerIRCBot):
     
     def on_pubmsg_personalities(self, command):
         if self.current_personality:
+            
             # Angel Commands
             if self.current_personality.get_name() == 'angel':
                 if 'weather' in command:
                     self.current_personality.get_weather(command)
+                elif 'left' or 'leave' in command.lower():
+                    self.current_personality.get_who_left()
             
-            # Rest of personalities
+            # Guss Commands
+
+            # Tweety Commands
+
+            # Sheldon Commands
+
+            # Abraham Commands
+
+            # Quimby Commands
+
 
 
 

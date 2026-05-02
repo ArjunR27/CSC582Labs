@@ -29,6 +29,28 @@ WEATHER_CODES = {
     95: "thunderstorm",
 }
 
+CITIES = [
+    "San Luis Obispo", "Los Angeles", "San Francisco", "San Diego", "Sacramento",
+    "San Jose", "Oakland", "Fresno", "Long Beach", "Bakersfield",
+    "Anaheim", "Santa Ana", "Riverside", "Stockton", "Irvine",
+    "Chula Vista", "Fremont", "Santa Barbara", "Modesto", "Oxnard",
+    "Fontana", "Moreno Valley", "Glendale", "Santa Clarita", "Huntington Beach",
+    "Berkeley", "Pasadena", "Pomona", "Escondido", "Torrance",
+    "New York", "Chicago", "Houston", "Phoenix", "Philadelphia",
+    "San Antonio", "Dallas", "Austin", "Seattle", "Denver",
+    "Boston", "Atlanta", "Miami", "Las Vegas", "Portland",
+    "Nashville", "Detroit", "Memphis", "Baltimore", "Milwaukee",
+    "London", "Paris", "Tokyo", "Beijing", "Shanghai",
+    "Mumbai", "Delhi", "Bangalore", "Dubai", "Sydney",
+    "Melbourne", "Toronto", "Vancouver", "Mexico City", "São Paulo",
+    "Buenos Aires", "Rio de Janeiro", "Cairo", "Lagos", "Nairobi",
+    "Istanbul", "Moscow", "Berlin", "Madrid", "Rome",
+    "Amsterdam", "Brussels", "Vienna", "Stockholm", "Oslo",
+    "Copenhagen", "Zurich", "Singapore", "Bangkok", "Seoul",
+    "Hong Kong", "Taipei", "Jakarta", "Kuala Lumpur", "Manila",
+    "Karachi", "Lahore", "Dhaka", "Colombo", "Kathmandu",
+]
+
 class Angel():
     def __init__(self, conn, channel, bot):
         self.name = 'angel'
@@ -63,6 +85,7 @@ class Angel():
 
     def get_weather(self, command):
         city = self.parse_city(command)
+        print(city)
         if city:
             geo = requests.get(
                 "https://geocoding-api.open-meteo.com/v1/search",
@@ -92,7 +115,7 @@ class Angel():
     def personality_tick(self):
         options = [
             self.current_day_and_time,
-            lambda: self.get_weather("weather in San Luis Obispo")
+            lambda: self.get_weather(random.choice(CITIES))
         ]
 
         random.choice(options)()

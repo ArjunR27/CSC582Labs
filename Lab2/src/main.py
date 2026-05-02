@@ -5,7 +5,7 @@ import random
 
 
 # CHANNEL = "#CSC582"
-CHANNEL = "#CSC582Testing"
+CHANNEL = "#CSC582Test"
 
 class PersonalityBot(SingleServerIRCBot):
     SERVER = 'irc.libera.chat'

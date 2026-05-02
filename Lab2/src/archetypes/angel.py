@@ -128,7 +128,8 @@ class Angel():
     def personality_tick(self):
         options = [
             self.current_day_and_time,
-            lambda: self.get_weather(random.choice(CITIES))
+            lambda: self.get_weather(random.choice(CITIES)),
+            self.get_who_left
         ]
 
         random.choice(options)()

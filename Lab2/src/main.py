@@ -1,6 +1,6 @@
 from irc.bot import SingleServerIRCBot
 import sys
-from archetypes import angel
+from archetypes import angel, guss, abraham, quimby, sheldon, tweety
 import random
 
 
@@ -116,9 +116,29 @@ class PersonalityBot(SingleServerIRCBot):
                     conn.privmsg(channel, "Requested a change to Angel!")
                     self.current_personality = angel.Angel(conn, channel, self)
                     self.PERSONALITIES[personality] = self.current_personality
-                if personality.lower() == 'normal':
+                elif personality.lower() == 'normal':
                     conn.privmsg(channel, 'Requested a change to base personality!')
                     self.current_personality = None
+                elif personality.lower() == 'guss':
+                    conn.privmsg(channel, "Requested a change to Guss!")
+                    self.current_personality = guss.Guss(conn, channel, self)
+                    self.PERSONALITIES[personality] = self.current_personality
+                elif personality.lower() == 'abraham':
+                    conn.privmsg(channel, "Requested a change to Abraham!")
+                    self.current_personality = abraham.Abraham(conn, channel, self)
+                    self.PERSONALITIES[personality] = self.current_personality
+                elif personality.lower() == 'quimby':
+                    conn.privmsg(channel, "Requested a change to Quimby!")
+                    self.current_personality = quimby.Quimby(conn, channel, self)
+                    self.PERSONALITIES[personality] = self.current_personality
+                elif personality.lower() == 'sheldon':
+                    conn.privmsg(channel, "Requested a change to Sheldon!")
+                    self.current_personality = sheldon.Sheldon(conn, channel, self)
+                    self.PERSONALITIES[personality] = self.current_personality
+                elif personality.lower() == 'tweety':
+                    conn.privmsg(channel, "Requested a change to Tweety!")
+                    self.current_personality = tweety.Tweety(conn, channel, self)
+                    self.PERSONALITIES[personality] = self.current_personality
 
 
     def on_pubmsg(self, conn, event):

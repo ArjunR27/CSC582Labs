@@ -5,7 +5,7 @@ import random
 
 
 # CHANNEL = "#CSC582"
-CHANNEL = "#CSC582Test"
+CHANNEL = "#CSC582TestTest"
 
 class PersonalityBot(SingleServerIRCBot):
     SERVER = 'irc.libera.chat'
@@ -189,7 +189,7 @@ class PersonalityBot(SingleServerIRCBot):
             
             # Angel Commands
             if self.current_personality.get_name() == 'angel':
-                if 'weather' in command:
+                if 'weather' or 'temp' or 'temperature' in command:
                     self.current_personality.get_weather(command)
                 elif 'left' or 'leave' in command.lower():
                     self.current_personality.get_who_left()
@@ -199,6 +199,9 @@ class PersonalityBot(SingleServerIRCBot):
             # Tweety Commands
 
             # Sheldon Commands
+            elif self.current_personality.get_name() == 'sheldon':
+                print("here")
+                self.current_personality.generate_wiki_response(command)
 
             # Abraham Commands
 

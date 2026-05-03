@@ -103,8 +103,6 @@ class Angel():
             response = self.ask_llm(msg)
             self.conn.privmsg(self.channel, response)
 
-
-
     def on_user_joined(self, nick):
         join_time = datetime.now().strftime("%H:%M:%S")
         self.knowledge[nick] = f"joined at {join_time}"

@@ -1,7 +1,9 @@
 from irc.bot import SingleServerIRCBot
 import sys
-from archetypes import angel, guss, abraham, quimby, sheldon, tweety
+from archetypes import sheldon
 import random
+from collections import deque, defaultdict
+import time
 
 
 # CHANNEL = "#CSC582"
@@ -10,7 +12,7 @@ CHANNEL = "#CSC582TestTest"
 class PersonalityBot(SingleServerIRCBot):
     SERVER = 'irc.libera.chat'
     PORT = 6667
-    ALLOWED_PERSONALITIES = set(['angel', 'guss', 'tweety', 'sheldon', 'abraham', 'quimby', 'normal'])
+    ALLOWED_PERSONALITIES = set(['sheldon', 'normal'])
 
     def __init__(self, channel, nickname):
         super().__init__([(self.SERVER, self.PORT)], nickname, nickname)
@@ -19,6 +21,9 @@ class PersonalityBot(SingleServerIRCBot):
         self.knowledge = {}
         self.current_personality = None
         self.PERSONALITIES = {}
+        self.channel_history = deque(maxlen=300)
+        self.user_histories = defaultdict(lambda: deque(maxlen=50))
+        self.last_seen = {}
     
     def on_welcome(self, conn, event):
         self.conn = conn
@@ -43,28 +48,15 @@ class PersonalityBot(SingleServerIRCBot):
             conn.privmsg(self.channel, f"I have joined the channel!")
             return
 
-        if self.current_personality:
-            match self.current_personality.get_name():
-                case 'angel':
-                    self.current_personality.on_user_joined(event.source.nick)
-
     def on_part(self, conn, event):
         nick = event.source.nick
         if nick == conn.get_nickname():
             return
-        if self.current_personality:
-            match self.current_personality.get_name():
-                case 'angel':
-                    self.current_personality.on_user_left(nick)
 
     def on_quit(self, conn, event):
         nick = event.source.nick
         if nick == conn.get_nickname():
             return
-        if self.current_personality:
-            match self.current_personality.get_name():
-                case 'angel':
-                    self.current_personality.on_user_left(nick)
     
     # That chatbot is expected to respond to any utterance in the channel that begins with its name followed by an immediate colon (:) symbol.
     def parse_privmsg(self, conn, text, botnick, channel):
@@ -86,9 +78,9 @@ class PersonalityBot(SingleServerIRCBot):
     
     def handle_who_are_you(self, conn, channel, author):
         conn.privmsg(channel, f"{author}: My name is {self.nickname}. I was created by Sid and Arjun in CSC-582")
-        conn.privmsg(channel, "I am a chatbot with multiple different personalities!")
-        conn.privmsg(channel, "Personalities: Angel, Guss, Tweety, Sheldon, Abraham, Quimby")
-        conn.privmsg(channel, "To switch, type: ASP-bot: switch [name]")
+        conn.privmsg(channel, "I am Sheldon.")
+        conn.privmsg(channel, "Mode options: Sheldon or normal.")
+        conn.privmsg(channel, "To switch, type: ASP-bot: switch sheldon")
         
     def handle_forget(self, conn, channel, author):
         self.knowledge = {}
@@ -112,33 +104,20 @@ class PersonalityBot(SingleServerIRCBot):
             self.current_personality = self.PERSONALITIES[personality]
         else:
             if personality.lower() in self.ALLOWED_PERSONALITIES:
-                if personality.lower() == 'angel':
-                    conn.privmsg(channel, "Requested a change to Angel!")
-                    self.current_personality = angel.Angel(conn, channel, self)
-                    self.PERSONALITIES[personality] = self.current_personality
-                elif personality.lower() == 'normal':
+                if personality.lower() == 'normal':
                     conn.privmsg(channel, 'Requested a change to base personality!')
                     self.current_personality = None
-                elif personality.lower() == 'guss':
-                    conn.privmsg(channel, "Requested a change to Guss!")
-                    self.current_personality = guss.Guss(conn, channel, self)
-                    self.PERSONALITIES[personality] = self.current_personality
-                elif personality.lower() == 'abraham':
-                    conn.privmsg(channel, "Requested a change to Abraham!")
-                    self.current_personality = abraham.Abraham(conn, channel, self)
-                    self.PERSONALITIES[personality] = self.current_personality
-                elif personality.lower() == 'quimby':
-                    conn.privmsg(channel, "Requested a change to Quimby!")
-                    self.current_personality = quimby.Quimby(conn, channel, self)
-                    self.PERSONALITIES[personality] = self.current_personality
                 elif personality.lower() == 'sheldon':
                     conn.privmsg(channel, "Requested a change to Sheldon!")
                     self.current_personality = sheldon.Sheldon(conn, channel, self)
                     self.PERSONALITIES[personality] = self.current_personality
-                elif personality.lower() == 'tweety':
-                    conn.privmsg(channel, "Requested a change to Tweety!")
-                    self.current_personality = tweety.Tweety(conn, channel, self)
-                    self.PERSONALITIES[personality] = self.current_personality
+
+    def get_recent_channel_messages(self, n=20):
+        return list(self.channel_history)[-n:]
+
+    def get_recent_user_messages(self, nick, n=10):
+        return list(self.user_histories[nick])[-n:]
+
 
 
     def on_pubmsg(self, conn, event):
@@ -150,6 +129,19 @@ class PersonalityBot(SingleServerIRCBot):
         
         if author == conn.get_nickname():
             return
+        
+        # add to chat history
+
+        msg = {
+            "ts": time.time(),
+            "author": author,
+            "text": text,
+            "addressed_to_bot": text.lower().startswith(f"{conn.get_nickname().lower()}:")
+        }
+
+        self.channel_history.append(msg)
+        self.user_histories[author].append(msg)
+        self.last_seen[author] = msg["ts"]
         
         # Commands take priority - check if this is a command first
         command_text = self.parse_privmsg(conn, text, self.nickname, self.channel)
@@ -186,26 +178,10 @@ class PersonalityBot(SingleServerIRCBot):
     
     def on_pubmsg_personalities(self, command):
         if self.current_personality:
-            
-            # Angel Commands
-            if self.current_personality.get_name() == 'angel':
-                if 'weather' or 'temp' or 'temperature' in command:
-                    self.current_personality.get_weather(command)
-                elif 'left' or 'leave' in command.lower():
-                    self.current_personality.get_who_left()
-            
-            # Guss Commands
-
-            # Tweety Commands
-
             # Sheldon Commands
-            elif self.current_personality.get_name() == 'sheldon':
+            if self.current_personality.get_name() == 'sheldon':
                 print("here")
                 self.current_personality.generate_wiki_response(command)
-
-            # Abraham Commands
-
-            # Quimby Commands
 
 
 
@@ -215,4 +191,3 @@ if __name__ == "__main__":
     # The chatbot’s name must end with the string “-bot”.
     bot_nickname = "ASP-bot"
     PersonalityBot(CHANNEL, bot_nickname).start()
-

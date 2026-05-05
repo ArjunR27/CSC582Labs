@@ -4,15 +4,20 @@ from archetypes import sheldon
 import random
 from collections import deque, defaultdict
 import time
+import re
 
 
 # CHANNEL = "#CSC582"
 CHANNEL = "#CSC582TestTest"
+BOT_DESCRIPTION = (
+    "I am Sheldon-ASP-bot. I answer science and tech questions with Wikipedia-grounded facts."
+)
 
 class PersonalityBot(SingleServerIRCBot):
     SERVER = 'irc.libera.chat'
     PORT = 6667
     ALLOWED_PERSONALITIES = set(['sheldon', 'normal'])
+    BOT_INTERJECTION_COOLDOWN_SEC = 45
 
     def __init__(self, channel, nickname):
         super().__init__([(self.SERVER, self.PORT)], nickname, nickname)
@@ -24,6 +29,7 @@ class PersonalityBot(SingleServerIRCBot):
         self.channel_history = deque(maxlen=300)
         self.user_histories = defaultdict(lambda: deque(maxlen=50))
         self.last_seen = {}
+        self.last_bot_interjection_ts = 0.0
     
     def on_welcome(self, conn, event):
         self.conn = conn
@@ -38,9 +44,42 @@ class PersonalityBot(SingleServerIRCBot):
         self.reactor.scheduler.execute_after(delay, self._personality_tick)
 
     def _personality_tick(self):
+        self.check_and_interject_bot_to_bot()
         if self.current_personality:
             self.current_personality.personality_tick()
         self._schedule_tick()
+
+    def random_fact(self):
+        return "did you know 2 + 2 = 4?"
+
+    def check_and_interject_bot_to_bot(self):
+        now = time.time()
+        if now - self.last_bot_interjection_ts < self.BOT_INTERJECTION_COOLDOWN_SEC:
+            return
+
+        # Scan a short recent window for two users addressing each other.
+        recent = self.get_recent_channel_messages(20)
+        pair_counts = defaultdict(int)
+
+        for msg in reversed(recent):
+            author = msg.get("author")
+            recipient = msg.get("recipient")
+
+            if not author or not recipient:
+                continue
+            if author == self.nickname or recipient == self.nickname:
+                continue
+            pair_key = tuple(sorted((author.lower(), recipient.lower())))
+            pair_counts[pair_key] += 1
+
+        active_pairs = [pair for pair, count in pair_counts.items() if count >= 2]
+        if not active_pairs:
+            return
+
+        chosen_pair = random.choice(active_pairs)
+        target = random.choice(list(chosen_pair))
+        self.conn.privmsg(self.channel, f"{target}: {self.random_fact()}")
+        self.last_bot_interjection_ts = now
     
     def on_join(self, conn, event):
         if event.source.nick == conn.get_nickname():
@@ -75,6 +114,9 @@ class PersonalityBot(SingleServerIRCBot):
     
     def handle_usage(self, conn, channel, author):
         self.handle_who_are_you(conn, channel, author)
+
+    def handle_bot_description(self, conn, channel, author):
+        conn.privmsg(channel, f"{author}: {BOT_DESCRIPTION}")
     
     def handle_who_are_you(self, conn, channel, author):
         conn.privmsg(channel, f"{author}: My name is {self.nickname}. I was created by Sid and Arjun in CSC-582")
@@ -118,8 +160,6 @@ class PersonalityBot(SingleServerIRCBot):
     def get_recent_user_messages(self, nick, n=10):
         return list(self.user_histories[nick])[-n:]
 
-
-
     def on_pubmsg(self, conn, event):
         if not event.arguments:
             return
@@ -131,12 +171,18 @@ class PersonalityBot(SingleServerIRCBot):
             return
         
         # add to chat history
+        recipient = None
+        match = re.match(r"^\s*([^:\s]+)\s*:\s*", text)
+        if match:
+            recipient = match.group(1)
+        addressed_to_bot = bool(recipient and recipient.lower() == conn.get_nickname().lower())
 
         msg = {
             "ts": time.time(),
             "author": author,
             "text": text,
-            "addressed_to_bot": text.lower().startswith(f"{conn.get_nickname().lower()}:")
+            "recipient": recipient,
+            "addressed_to_bot": addressed_to_bot
         }
 
         self.channel_history.append(msg)
@@ -147,6 +193,11 @@ class PersonalityBot(SingleServerIRCBot):
         command_text = self.parse_privmsg(conn, text, self.nickname, self.channel)
         if command_text:
             command_lower = command_text.lower().strip()
+            normalized_command = re.sub(r"[^a-z0-9\s]", "", command_lower)
+
+            if normalized_command in {"what do you do", "so what do you do"}:
+                self.handle_bot_description(conn, self.channel, author)
+                return
             
             # Get first word for single-word commands
             parts = command_text.split(None, 1)
@@ -185,9 +236,7 @@ class PersonalityBot(SingleServerIRCBot):
 
 
 
-
-
 if __name__ == "__main__":
     # The chatbot’s name must end with the string “-bot”.
-    bot_nickname = "ASP-bot"
+    bot_nickname = "Sheldon-ASP-bot"
     PersonalityBot(CHANNEL, bot_nickname).start()

@@ -14,6 +14,10 @@ import spacy
 from dotenv import load_dotenv
 import os
 from groq import Groq
+import nltk
+from nltk import word_tokenize
+nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')
 
 
 load_dotenv()
@@ -34,7 +38,7 @@ TOPICS =  [
     "Prime number", "Riemann hypothesis", "Euler's identity",
     "Game theory", "Topology", "Fermat's Last Theorem",
     # Chemistry / Biology
-    "Periodic table", "Covalent bond", "DNA", "CRISPR",
+    "Periodic table", "Covalent bond", "DNA",
     "Protein folding", "Mitochondria", "Photosynthesis",
     # Space
     "Large Hadron Collider", "James Webb Space Telescope",
@@ -42,7 +46,7 @@ TOPICS =  [
     "NASA", "SpaceX", "Rocket propulsion", "Black holes", "Exoplanets"
 ]
 
-TOPIC_DOCS = [(topic, nlp.make_doc(topic)) for topic in TOPICS]
+TOPIC_DOCS = [(topic, nlp(topic)) for topic in TOPICS]
 
 class Sheldon():
     def __init__(self, conn, channel, bot):
@@ -83,37 +87,57 @@ class Sheldon():
         )
         return response.choices[0].message.content
 
-    def extract_topic(self, text):
-        text_lower = text.lower()
+    def keyword_extraction(self, query):
+        doc = nlp(query)
+        keyword_chunks = []
+        for chunk in doc.noun_chunks:
+            if not chunk.root.is_stop and chunk.root.pos_ != 'PRON':
+                keyword_chunks.append(chunk.text.lower())
+        return keyword_chunks
 
-        # Direct keyword match first — far more reliable than vector similarity
-        # for queries like "what do you know about prime numbers?"
-        for topic, _ in TOPIC_DOCS:
-            topic_lower = topic.lower()
-            if topic_lower in text_lower:
-                return topic
-            # All significant words (4+ chars) from the topic appear in the text
-            words = [w for w in topic_lower.split() if len(w) > 3]
-            if words and all(w in text_lower for w in words):
-                return topic
+    def get_topic(self, query):
+        keyword_chunks = self.keyword_extraction(query)
+        print(keyword_chunks)
+        if not keyword_chunks:
+            return random.choice(TOPICS)
 
-        # Fall back to vector similarity for paraphrased/indirect mentions
-        user_doc = nlp.make_doc(text)
-        if not user_doc.has_vector:
-            return None
-        best_topic = None
-        best_score = 0.0
+        search_text = " ".join(keyword_chunks)
+        search_doc = nlp(search_text)
+    
+        best_topic, best_score = None, 0.0
         for topic, topic_doc in TOPIC_DOCS:
-            if not topic_doc.has_vector:
+            if not topic_doc.has_vector or topic_doc.vector_norm == 0:
                 continue
-            score = user_doc.similarity(topic_doc)
+            score = search_doc.similarity(topic_doc)
             if score > best_score:
-                best_topic = topic
                 best_score = score
-
+                best_topic = topic
+        
         if best_score > 0.3:
             return best_topic
-        return None
+        
+        else:
+            return random.choice(TOPICS)
+
+
+    # def get_topic(self, query):
+    #     # extract important words from query: 
+    #     for topic, topic_doc in TOPIC_DOCS:
+    #         print(topic, topic_doc.has_vector, topic_doc.vector_norm)
+
+    #     query_doc = nlp(query)
+    #     if not query_doc.has_vector:
+    #         return random.choice(TOPICS)
+        
+    #     best_topic, best_score = None, 0.0
+    #     for topic, topic_doc in TOPIC_DOCS:
+    #         score = query_doc.similarity(topic_doc)
+    #         if score > best_score:
+    #             best_score = score
+    #             best_topic = topic
+        
+    #     return best_topic if best_score > 0.3 else random.choice(TOPICS)
+
 
     def fetch_wiki_fact(self, topic):
         try:

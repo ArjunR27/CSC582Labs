@@ -302,10 +302,15 @@ class Sheldon():
         return "You don't know what you're talking to why would I even respond to such low IQ. "
     
     def personality_tick(self):
+        # ~15% chance per tick: reach out and greet a random channel member.
+        if random.random() < 0.50:
+            self.bot.initiate_greeting_to_random_user()
+            return
+
         json_cache = os.path.join(os.path.dirname(__file__), '..', 'wiki_topic_cache.json')
         with open(json_cache, 'r') as f:
             cache = json.load(f)
-        
+
         topic = random.choice(list(cache.keys()))
         wiki_text = cache[topic].get('content', '')
 

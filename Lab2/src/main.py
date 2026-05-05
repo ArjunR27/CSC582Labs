@@ -31,7 +31,9 @@ class PersonalityBot(SingleServerIRCBot):
         self.channel_history = deque(maxlen=300)
         self.user_histories = defaultdict(lambda: deque(maxlen=50))
         self.last_seen = {}
-    
+        # Tracks users the bot greeted first so we don't echo their response back.
+        self.bot_initiated_greetings = set()
+
     def on_welcome(self, conn, event):
         self.conn = conn
         conn.join(self.channel)
@@ -42,7 +44,7 @@ class PersonalityBot(SingleServerIRCBot):
     # will change depending on the current personality
     def _schedule_tick(self):
         # can change the delay
-        delay = random.uniform(5, 10)
+        delay = random.uniform(30, 60)
         self.reactor.scheduler.execute_after(delay, self._personality_tick)
 
     def _personality_tick(self):
@@ -160,8 +162,29 @@ class PersonalityBot(SingleServerIRCBot):
         else:
             conn.privmsg(channel, f"{author}: No users found.")
     
+    def initiate_greeting_to_random_user(self):
+        """Pick a random channel member and say hello first.
+
+        The greeted user's nick is recorded in bot_initiated_greetings so that
+        when they reply with 'hello', handle_hello knows to stay silent (the
+        bot already opened that exchange and must not keep it going).
+        """
+        csc_channel = self.channels.get(self.channel)
+        if not csc_channel:
+            return
+        users = [u for u in csc_channel.users() if u != self.nickname]
+        if not users:
+            return
+        target = random.choice(users)
+        self.conn.privmsg(self.channel, f"Hello {target}!")
+        self.bot_initiated_greetings.add(target.lower())
+
     def handle_hello(self, conn, channel, author):
-        conn.privmsg(channel, f"Hello {author}, please stop bothering me. I'mm currently trying to solve the EPR Paradox.")
+        # If the bot said hello first, the user is just replying — don't respond.
+        if author.lower() in self.bot_initiated_greetings:
+            self.bot_initiated_greetings.discard(author.lower())
+            return
+        conn.privmsg(channel, f"Hello {author}, please stop bothering me. I'm currently trying to solve the EPR Paradox.")
 
     def get_recent_channel_messages(self, n=20):
         return list(self.channel_history)[-n:]

@@ -1,5 +1,0 @@
-irc
-wikipedia
-spacy
-python-dotenv
-groq

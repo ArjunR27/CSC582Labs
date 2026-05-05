@@ -5,6 +5,8 @@ import random
 from collections import deque, defaultdict
 import time
 import re
+import os
+import json
 
 
 # CHANNEL = "#CSC582"
@@ -17,7 +19,7 @@ class PersonalityBot(SingleServerIRCBot):
     SERVER = 'irc.libera.chat'
     PORT = 6667
     ALLOWED_PERSONALITIES = set(['sheldon', 'normal'])
-    BOT_INTERJECTION_COOLDOWN_SEC = 45
+    BOT_INTERJECTION_COOLDOWN_SEC = 75
 
     def __init__(self, channel, nickname):
         super().__init__([(self.SERVER, self.PORT)], nickname, nickname)
@@ -75,9 +77,43 @@ class PersonalityBot(SingleServerIRCBot):
             return
 
         chosen_pair = random.choice(active_pairs)
-        target = random.choice(list(chosen_pair))
-        self.conn.privmsg(self.channel, f"{target}: {self.random_fact()}")
+        user = random.choice(list(chosen_pair))
+        recipient = chosen_pair[0] if chosen_pair[1] == user else chosen_pair[1]
+        fact = self.random_fact()
+        self.conn.privmsg(self.channel, f"Hey {user}, stop talking to {recipient}. {fact}")
+        if self.current_personality and self.current_personality.get_name() == 'sheldon':
+            self.current_personality.register_activity()
+
+        # Clear stored messages for this pair so a new interjection only happens
+        # after they start a fresh exchange.
+        pair_set = set(chosen_pair)
+        filtered_history = deque(maxlen=self.channel_history.maxlen)
+        for msg in self.channel_history:
+            author = (msg.get("author") or "").lower()
+            msg_recipient = (msg.get("recipient") or "").lower()
+            if author in pair_set and msg_recipient in pair_set:
+                continue
+            filtered_history.append(msg)
+        self.channel_history = filtered_history
+
         self.last_bot_interjection_ts = now
+
+    def random_fact(self):
+        if self.current_personality and self.current_personality.get_name() == 'sheldon':
+            json_cache = os.path.join(os.path.dirname(__file__), 'wiki_topic_cache.json')
+            try:
+                with open(json_cache, 'r') as f:
+                    cache = json.load(f)
+                if cache:
+                    topic = random.choice(list(cache.keys()))
+                    wiki_text = cache[topic].get('content', '')
+                    if wiki_text:
+                        fact = self.current_personality.fact_extractor(wiki_text)
+                        if fact:
+                            return fact
+            except Exception:
+                pass
+        return "did you know 2 + 2 = 4?"
     
     def on_join(self, conn, event):
         if event.source.nick == conn.get_nickname():
@@ -115,6 +151,10 @@ class PersonalityBot(SingleServerIRCBot):
         
     def handle_forget(self, conn, channel, author):
         self.knowledge = {}
+        self.channel_history = deque(maxlen=300)
+        self.user_histories = defaultdict(lambda: deque(maxlen=50))
+        self.last_seen = {}
+        self.last_bot_interjection_ts = 0.0
         conn.privmsg(channel, f"{author}: forgetting everything")
 
     def handle_users(self, conn, channel, author):
@@ -168,6 +208,8 @@ class PersonalityBot(SingleServerIRCBot):
         # Commands take priority - check if this is a command first
         command_text = self.parse_privmsg(conn, text, self.nickname, self.channel)
         if command_text:
+            if self.current_personality and self.current_personality.get_name() == 'sheldon':
+                self.current_personality.register_activity()
             command_lower = command_text.lower().strip()
             normalized_command = re.sub(r"[^a-z0-9\s]", "", command_lower)
 
@@ -180,7 +222,7 @@ class PersonalityBot(SingleServerIRCBot):
             command_name = parts[0].lower()
             command_query = parts[1] if len(parts) > 1 else ""
 
-            print(command_name, command_query)
+            print(f"Handling command: {command_name}")
             
             BASE_COMMANDS = {
                 # The chatbot must kill itself when command “die” is given to it (preceded by its name followed by colon).
@@ -197,15 +239,15 @@ class PersonalityBot(SingleServerIRCBot):
                 BASE_COMMANDS[command_name](conn, self.channel, author)
                 return
             else:
-                self.on_pubmsg_personalities(command_text)
+                self.on_pubmsg_personalities(command_text, author)
             
     
-    def on_pubmsg_personalities(self, command):
+    def on_pubmsg_personalities(self, command, author=None):
         if self.current_personality:
             # Sheldon Commands
             if self.current_personality.get_name() == 'sheldon':
-                print("here")
-                self.current_personality.generate_wiki_response(command)
+                print("Routing message to Sheldon personality")
+                self.current_personality.generate_wiki_response(command, author=author)
 
 
 

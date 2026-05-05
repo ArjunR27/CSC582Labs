@@ -23,6 +23,7 @@ import torch
 import numpy as np
 import json
 import os
+import time
 
 BERT_TOKENIZER = BertTokenizer.from_pretrained("bert-base-uncased")
 BERT_MODEL = BertModel.from_pretrained("bert-base-uncased")
@@ -58,20 +59,28 @@ TOPICS =  [
 TOPIC_DOCS = [(topic, nlp(topic)) for topic in TOPICS]
 
 class Sheldon():
+    FUN_FACT_COOLDOWN_SEC = 120
+
     def __init__(self, conn, channel, bot):
         self.name = 'sheldon'
         self.conn = conn
         self.channel = channel
         self.bot = bot
+        self.last_fun_fact_ts = 0.0
+        self.last_activity_ts = time.time()
     
     def get_name(self):
         return self.name
     
     def say(self, msg):
+        self.register_activity()
         msg = msg.replace('\r', '').replace('\n', ' ')
         max_len = 400  # leaves room for PRIVMSG framing overhead
         for i in range(0, len(msg), max_len):
             self.conn.privmsg(self.channel, msg[i:i + max_len])
+
+    def register_activity(self):
+        self.last_activity_ts = time.time()
     
     def ask_llm(self, context, query):
         response = client.chat.completions.create(
@@ -108,7 +117,6 @@ class Sheldon():
 
     def get_topic(self, query):
         keyword_chunks = self.keyword_extraction(query)
-        print(keyword_chunks)
         if not keyword_chunks:
             return random.choice(TOPICS)
 
@@ -129,6 +137,33 @@ class Sheldon():
         
         else:
             return random.choice(TOPICS)
+
+    def fetch_wiki_fact(self, topic):
+        try:
+            results = wikipedia.search(topic)
+            if not results:
+                return None
+
+            page = wikipedia.page(results[0], auto_suggest=False)
+            return {
+                "title": page.title,
+                "url": page.url,
+                "summary": wikipedia.summary(page.title, sentences=5, auto_suggest=False),
+                "content": page.content,
+            }
+        except wikipedia.exceptions.DisambiguationError as e:
+            try:
+                page = wikipedia.page(e.options[0], auto_suggest=False)
+                return {
+                    "title": page.title,
+                    "url": page.url,
+                    "summary": wikipedia.summary(page.title, sentences=5, auto_suggest=False),
+                    "content": page.content,
+                }
+            except Exception:
+                return None
+        except Exception:
+            return None
     
     def get_cls_vector(self, wiki_text):
         inputs = BERT_TOKENIZER(
@@ -153,7 +188,7 @@ class Sheldon():
             return False
         return True
 
-    def fact_extractor(self, wiki_text, top_n=2):
+    def fact_extractor(self, wiki_text, top_n=3):
         print("Extracting Fact!")
         if not wiki_text:
             return None
@@ -189,8 +224,6 @@ class Sheldon():
         scored.sort(reverse=True)
         top_pool = scored[:max(top_n, len(scored) // 2)]
         chosen = random.sample(top_pool, min(top_n, len(top_pool)))
-        print(scored)
-        print(chosen)
         return " ".join([s for _, s in chosen])
 
 
@@ -244,9 +277,10 @@ class Sheldon():
             "score": top_score,
         }
 
-    def generate_wiki_response(self, text):
+    def generate_wiki_response(self, text, author=None):
+        self.register_activity()
         min_extract_score = 0.30
-        topic = self.extract_topic(text)
+        topic = self.get_topic(text)
         if topic:
             article = self.fetch_wiki_fact(topic)
         else:
@@ -263,12 +297,21 @@ class Sheldon():
 
             llm_response = self.ask_llm(context, text)
             if llm_response:
+                if author:
+                    llm_response = f"{author}: {llm_response}"
                 return self.say(llm_response)
             response = f"{article['title']}: {context}"
+            if author:
+                response = f"{author}: {response}"
             return self.say(response)
         return "You don't know what you're talking to why would I even respond to such low IQ. "
     
     def personality_tick(self):
+        now = time.time()
+        if now - self.last_fun_fact_ts < self.FUN_FACT_COOLDOWN_SEC:
+            return
+        if now - self.last_activity_ts < self.FUN_FACT_COOLDOWN_SEC:
+            return
 
         json_cache = os.path.join(os.path.dirname(__file__), '..', 'wiki_topic_cache.json')
         with open(json_cache, 'r') as f:
@@ -279,4 +322,5 @@ class Sheldon():
 
         facts = self.fact_extractor(wiki_text)
         if facts:
-            self.say(f"Here are some facts: {facts}")
+            self.say(f"Here are some fun facts: {facts}")
+            self.last_fun_fact_ts = now

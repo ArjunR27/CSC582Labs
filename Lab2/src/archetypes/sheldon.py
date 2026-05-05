@@ -30,7 +30,8 @@ BERT_MODEL.eval()
 
 
 load_dotenv()
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+api_key = os.getenv("GROQ_API_KEY")
+client = Groq(api_key=api_key) if api_key else None
 nlp = spacy.load("en_core_web_md")
 
 TOPICS =  [
@@ -78,6 +79,8 @@ class Sheldon():
         return
     
     def ask_llm(self, context, query):
+        if client is None:
+            return None
         response = client.chat.completions.create(
             model='llama-3.1-8b-instant',
             messages=[
@@ -88,6 +91,7 @@ class Sheldon():
                         - You volunteer random information about random geeky subjects
                         - You want to be the center of attention and particularly hates two other users talking to each other that ignore him
                         - Snide put downs on intelligence
+                        - If the query is not related science/math/chemistry/physics/computer science/technology, ignores the question and just talks about wikipedia content
                         - Keep your response to one short paragraph
 
                         Answer using only the following Wikipedia context:

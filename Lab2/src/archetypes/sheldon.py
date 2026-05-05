@@ -23,7 +23,6 @@ import torch
 import numpy as np
 import json
 import os
-import time
 
 BERT_TOKENIZER = BertTokenizer.from_pretrained("bert-base-uncased")
 BERT_MODEL = BertModel.from_pretrained("bert-base-uncased")
@@ -59,15 +58,11 @@ TOPICS =  [
 TOPIC_DOCS = [(topic, nlp(topic)) for topic in TOPICS]
 
 class Sheldon():
-    FUN_FACT_COOLDOWN_SEC = 120
-
     def __init__(self, conn, channel, bot):
         self.name = 'sheldon'
         self.conn = conn
         self.channel = channel
         self.bot = bot
-        self.last_fun_fact_ts = 0.0
-        self.last_activity_ts = time.time()
     
     def get_name(self):
         return self.name
@@ -80,7 +75,7 @@ class Sheldon():
             self.conn.privmsg(self.channel, msg[i:i + max_len])
 
     def register_activity(self):
-        self.last_activity_ts = time.time()
+        return
     
     def ask_llm(self, context, query):
         response = client.chat.completions.create(
@@ -307,12 +302,6 @@ class Sheldon():
         return "You don't know what you're talking to why would I even respond to such low IQ. "
     
     def personality_tick(self):
-        now = time.time()
-        if now - self.last_fun_fact_ts < self.FUN_FACT_COOLDOWN_SEC:
-            return
-        if now - self.last_activity_ts < self.FUN_FACT_COOLDOWN_SEC:
-            return
-
         json_cache = os.path.join(os.path.dirname(__file__), '..', 'wiki_topic_cache.json')
         with open(json_cache, 'r') as f:
             cache = json.load(f)
@@ -323,4 +312,3 @@ class Sheldon():
         facts = self.fact_extractor(wiki_text)
         if facts:
             self.say(f"Here are some fun facts: {facts}")
-            self.last_fun_fact_ts = now

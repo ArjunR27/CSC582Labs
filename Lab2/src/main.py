@@ -34,13 +34,14 @@ class PersonalityBot(SingleServerIRCBot):
     def on_welcome(self, conn, event):
         self.conn = conn
         conn.join(self.channel)
+        self.current_personality = sheldon.Sheldon(conn, self.channel, self)
         self._schedule_tick()
     
     # Schedules the personalities own 'tick' every 3-5 seconds
     # will change depending on the current personality
     def _schedule_tick(self):
         # can change the delay
-        delay = random.uniform(25, 30)
+        delay = random.uniform(5, 10)
         self.reactor.scheduler.execute_after(delay, self._personality_tick)
 
     def _personality_tick(self):
@@ -48,9 +49,6 @@ class PersonalityBot(SingleServerIRCBot):
         if self.current_personality:
             self.current_personality.personality_tick()
         self._schedule_tick()
-
-    def random_fact(self):
-        return "did you know 2 + 2 = 4?"
 
     def check_and_interject_bot_to_bot(self):
         now = time.time()
@@ -111,18 +109,9 @@ class PersonalityBot(SingleServerIRCBot):
         conn.privmsg(channel, f"{author}: really? OK, fine.")
         self.die(msg="See you later!")
         sys.exit(0)
-    
-    def handle_usage(self, conn, channel, author):
-        self.handle_who_are_you(conn, channel, author)
 
     def handle_bot_description(self, conn, channel, author):
-        conn.privmsg(channel, f"{author}: {BOT_DESCRIPTION}")
-    
-    def handle_who_are_you(self, conn, channel, author):
-        conn.privmsg(channel, f"{author}: My name is {self.nickname}. I was created by Sid and Arjun in CSC-582")
-        conn.privmsg(channel, "I am Sheldon.")
-        conn.privmsg(channel, "Mode options: Sheldon or normal.")
-        conn.privmsg(channel, "To switch, type: ASP-bot: switch sheldon")
+        conn.privmsg(channel, f"Hello {author}: {BOT_DESCRIPTION}")
         
     def handle_forget(self, conn, channel, author):
         self.knowledge = {}
@@ -140,19 +129,6 @@ class PersonalityBot(SingleServerIRCBot):
     
     def handle_hello(self, conn, channel, author):
         conn.privmsg(channel, f"Hi {author}!")
-    
-    def handle_switch(self, conn, channel, personality):
-        if personality.lower() in self.PERSONALITIES:
-            self.current_personality = self.PERSONALITIES[personality]
-        else:
-            if personality.lower() in self.ALLOWED_PERSONALITIES:
-                if personality.lower() == 'normal':
-                    conn.privmsg(channel, 'Requested a change to base personality!')
-                    self.current_personality = None
-                elif personality.lower() == 'sheldon':
-                    conn.privmsg(channel, "Requested a change to Sheldon!")
-                    self.current_personality = sheldon.Sheldon(conn, channel, self)
-                    self.PERSONALITIES[personality] = self.current_personality
 
     def get_recent_channel_messages(self, n=20):
         return list(self.channel_history)[-n:]
@@ -212,7 +188,6 @@ class PersonalityBot(SingleServerIRCBot):
                 # The chatbot must be able to get a list of other participants in the channel.
                 "users": self.handle_users,
                 "forget": self.handle_forget,
-                "usage": self.handle_usage,
                 # As a bare minimum conversation starter, the chatbot must respond to a “hello” utterance directed to it, with another hello to the same source that greeted it first. 
                 # If the chatbot itself had initiated the greeting, it must not respond to the response.
                 "hello": self.handle_hello,
@@ -221,8 +196,6 @@ class PersonalityBot(SingleServerIRCBot):
             if command_name in BASE_COMMANDS:
                 BASE_COMMANDS[command_name](conn, self.channel, author)
                 return
-            elif command_name == "switch":
-                self.handle_switch(conn, self.channel, command_query)
             else:
                 self.on_pubmsg_personalities(command_text)
             
@@ -238,5 +211,5 @@ class PersonalityBot(SingleServerIRCBot):
 
 if __name__ == "__main__":
     # The chatbot’s name must end with the string “-bot”.
-    bot_nickname = "Sheldon-ASP-bot"
+    bot_nickname = "Sheldon-AS-bot"
     PersonalityBot(CHANNEL, bot_nickname).start()

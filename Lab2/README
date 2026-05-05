@@ -1,6 +1,4 @@
-To run the GROQ API, go to line 33 in archetypes/sheldon.py and replace it with this
 
-api_key = "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"
 
 create virtual environemnt and install dependencies
 

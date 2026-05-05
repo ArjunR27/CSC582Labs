@@ -170,10 +170,3 @@ class Sheldon():
     
     def personality_tick(self):
         return
-
-if __name__ == "__main__":
-    sheldon = Sheldon(None, None, None)
-    query = "I love racing cars"
-    print(query)
-    topic = sheldon.get_topic(query)
-    print(topic)

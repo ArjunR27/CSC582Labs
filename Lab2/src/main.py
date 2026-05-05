@@ -128,7 +128,7 @@ class PersonalityBot(SingleServerIRCBot):
             conn.privmsg(channel, f"{author}: No users found.")
     
     def handle_hello(self, conn, channel, author):
-        conn.privmsg(channel, f"Hi {author}!")
+        conn.privmsg(channel, f"Hello {author}, please stop bothering me. I'mm currently trying to solve the EPR Paradox.")
 
     def get_recent_channel_messages(self, n=20):
         return list(self.channel_history)[-n:]

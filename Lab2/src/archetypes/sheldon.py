@@ -59,14 +59,11 @@ TOPICS =  [
 TOPIC_DOCS = [(topic, nlp(topic)) for topic in TOPICS]
 
 class Sheldon():
-    FUN_FACT_COOLDOWN_SEC = 120
-
     def __init__(self, conn, channel, bot):
         self.name = 'sheldon'
         self.conn = conn
         self.channel = channel
         self.bot = bot
-        self.last_fun_fact_ts = 0.0
         self.last_activity_ts = time.time()
     
     def get_name(self):
@@ -308,9 +305,7 @@ class Sheldon():
     
     def personality_tick(self):
         now = time.time()
-        if now - self.last_fun_fact_ts < self.FUN_FACT_COOLDOWN_SEC:
-            return
-        if now - self.last_activity_ts < self.FUN_FACT_COOLDOWN_SEC:
+        if now - self.last_activity_ts < 15:
             return
 
         json_cache = os.path.join(os.path.dirname(__file__), '..', 'wiki_topic_cache.json')
@@ -323,4 +318,3 @@ class Sheldon():
         facts = self.fact_extractor(wiki_text)
         if facts:
             self.say(f"Here are some fun facts: {facts}")
-            self.last_fun_fact_ts = now

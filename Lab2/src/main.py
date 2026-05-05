@@ -19,7 +19,6 @@ class PersonalityBot(SingleServerIRCBot):
     SERVER = 'irc.libera.chat'
     PORT = 6667
     ALLOWED_PERSONALITIES = set(['sheldon', 'normal'])
-    BOT_INTERJECTION_COOLDOWN_SEC = 75
 
     def __init__(self, channel, nickname):
         super().__init__([(self.SERVER, self.PORT)], nickname, nickname)
@@ -31,7 +30,6 @@ class PersonalityBot(SingleServerIRCBot):
         self.channel_history = deque(maxlen=300)
         self.user_histories = defaultdict(lambda: deque(maxlen=50))
         self.last_seen = {}
-        self.last_bot_interjection_ts = 0.0
     
     def on_welcome(self, conn, event):
         self.conn = conn
@@ -42,21 +40,16 @@ class PersonalityBot(SingleServerIRCBot):
     # Schedules the personalities own 'tick' every 3-5 seconds
     # will change depending on the current personality
     def _schedule_tick(self):
-        # can change the delay
-        delay = random.uniform(5, 10)
+        delay = 15
         self.reactor.scheduler.execute_after(delay, self._personality_tick)
 
     def _personality_tick(self):
-        self.check_and_interject_bot_to_bot()
-        if self.current_personality:
+        interjected = self.check_and_interject_bot_to_bot()
+        if (not interjected) and self.current_personality:
             self.current_personality.personality_tick()
         self._schedule_tick()
 
     def check_and_interject_bot_to_bot(self):
-        now = time.time()
-        if now - self.last_bot_interjection_ts < self.BOT_INTERJECTION_COOLDOWN_SEC:
-            return
-
         # Scan a short recent window for two users addressing each other.
         recent = self.get_recent_channel_messages(20)
         pair_counts = defaultdict(int)
@@ -74,7 +67,7 @@ class PersonalityBot(SingleServerIRCBot):
 
         active_pairs = [pair for pair, count in pair_counts.items() if count >= 2]
         if not active_pairs:
-            return
+            return False
 
         chosen_pair = random.choice(active_pairs)
         user = random.choice(list(chosen_pair))
@@ -95,8 +88,7 @@ class PersonalityBot(SingleServerIRCBot):
                 continue
             filtered_history.append(msg)
         self.channel_history = filtered_history
-
-        self.last_bot_interjection_ts = now
+        return True
 
     def random_fact(self):
         if self.current_personality and self.current_personality.get_name() == 'sheldon':
@@ -154,7 +146,6 @@ class PersonalityBot(SingleServerIRCBot):
         self.channel_history = deque(maxlen=300)
         self.user_histories = defaultdict(lambda: deque(maxlen=50))
         self.last_seen = {}
-        self.last_bot_interjection_ts = 0.0
         conn.privmsg(channel, f"{author}: forgetting everything")
 
     def handle_users(self, conn, channel, author):

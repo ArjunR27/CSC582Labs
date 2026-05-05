@@ -17,6 +17,16 @@ import nltk
 from nltk import word_tokenize
 nltk.download('punkt')
 nltk.download('averaged_perceptron_tagger')
+import random
+from transformers import BertTokenizer, BertModel
+import torch
+import numpy as np
+import json
+import os
+
+BERT_TOKENIZER = BertTokenizer.from_pretrained("bert-base-uncased")
+BERT_MODEL = BertModel.from_pretrained("bert-base-uncased")
+BERT_MODEL.eval()
 
 
 load_dotenv()
@@ -58,6 +68,7 @@ class Sheldon():
         return self.name
     
     def say(self, msg):
+        msg = msg.replace('\r', '').replace('\n', ' ')
         max_len = 400  # leaves room for PRIVMSG framing overhead
         for i in range(0, len(msg), max_len):
             self.conn.privmsg(self.channel, msg[i:i + max_len])
@@ -118,53 +129,71 @@ class Sheldon():
         
         else:
             return random.choice(TOPICS)
-
-
-    # def get_topic(self, query):
-    #     # extract important words from query: 
-    #     for topic, topic_doc in TOPIC_DOCS:
-    #         print(topic, topic_doc.has_vector, topic_doc.vector_norm)
-
-    #     query_doc = nlp(query)
-    #     if not query_doc.has_vector:
-    #         return random.choice(TOPICS)
+    
+    def get_cls_vector(self, wiki_text):
+        inputs = BERT_TOKENIZER(
+            wiki_text,
+            return_tensors='pt',
+            truncation=True,
+            max_length=512,
+            padding=True
+        )
+        with torch.no_grad():
+            outputs = BERT_MODEL(**inputs)
         
-    #     best_topic, best_score = None, 0.0
-    #     for topic, topic_doc in TOPIC_DOCS:
-    #         score = query_doc.similarity(topic_doc)
-    #         if score > best_score:
-    #             best_score = score
-    #             best_topic = topic
-        
-    #     return best_topic if best_score > 0.3 else random.choice(TOPICS)
+        return outputs.last_hidden_state[:, 0, :].squeeze().numpy()
+    
+    def _is_clean_sentence(self, text):
+        """Return False for sentences with newlines, LaTeX markup, or other noise."""
+        if '\n' in text:
+            return False
+        if '{\\displaystyle' in text or '\\displaystyle' in text:
+            return False
+        if text.count('{') + text.count('}') > 4:
+            return False
+        return True
 
-
-    def fetch_wiki_fact(self, topic):
-        try:
-            results = wikipedia.search(topic)
-            if not results:
-                return None
-
-            page = wikipedia.page(results[0], auto_suggest=False)
-            return {
-                "title": page.title,
-                "url": page.url,
-                "summary": wikipedia.summary(page.title, sentences=5, auto_suggest=False),
-                "content": page.content,
-            }
-        except wikipedia.exceptions.DisambiguationError as e:
-            try:
-                page = wikipedia.page(e.options[0], auto_suggest=False)
-                return {
-                    "title": page.title,
-                    "url": page.url,
-                    "summary": wikipedia.summary(page.title, sentences=5, auto_suggest=False),
-                    "content": page.content,
-                }
-            except Exception:
-                return None
-        except Exception:
+    def fact_extractor(self, wiki_text, top_n=2):
+        print("Extracting Fact!")
+        if not wiki_text:
             return None
+
+        doc = nlp(wiki_text)
+        sentences = []
+        for sent in doc.sents:
+            text = sent.text.strip()
+            if len(text) > 10 and self._is_clean_sentence(text):
+                sentences.append(text)
+        
+        if not sentences:
+            return None
+    
+        max_start = max(0, len(sentences) - 15)
+        start = random.randint(0, max_start)
+        chunk = sentences[start:start + 15]
+
+        scored = []
+        for sent in chunk:
+            inputs = BERT_TOKENIZER(
+                sent,
+                return_tensors="pt",
+                truncation=True,
+                max_length=512
+            )
+            with torch.no_grad():
+                outputs = BERT_MODEL(**inputs)
+            cls_vec = outputs.last_hidden_state[:, 0, :].squeeze().numpy()
+            score = np.linalg.norm(cls_vec)
+            scored.append((score, sent))
+
+        scored.sort(reverse=True)
+        top_pool = scored[:max(top_n, len(scored) // 2)]
+        chosen = random.sample(top_pool, min(top_n, len(top_pool)))
+        print(scored)
+        print(chosen)
+        return " ".join([s for _, s in chosen])
+
+
 
     def wiki_extract_from_query(self, query, wiki_text, chunk_size=3, top_k=2):
         if not wiki_text or not query:
@@ -172,8 +201,11 @@ class Sheldon():
 
         doc = nlp(wiki_text)
 
-        # create sentences
-        sentences = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
+        # create sentences, skipping noisy ones (newlines, LaTeX markup)
+        sentences = [
+            sent.text.strip() for sent in doc.sents
+            if sent.text.strip() and self._is_clean_sentence(sent.text.strip())
+        ]
         if not sentences:
             return None
 
@@ -237,4 +269,14 @@ class Sheldon():
         return "You don't know what you're talking to why would I even respond to such low IQ. "
     
     def personality_tick(self):
-        return
+
+        json_cache = os.path.join(os.path.dirname(__file__), '..', 'wiki_topic_cache.json')
+        with open(json_cache, 'r') as f:
+            cache = json.load(f)
+        
+        topic = random.choice(list(cache.keys()))
+        wiki_text = cache[topic].get('content', '')
+
+        facts = self.fact_extractor(wiki_text)
+        if facts:
+            self.say(f"Here are some facts: {facts}")

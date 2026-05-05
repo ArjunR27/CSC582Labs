@@ -10,7 +10,7 @@ import json
 
 
 # CHANNEL = "#CSC582"
-CHANNEL = "#CSC582TestTest"
+CHANNEL = "#CSC582"
 BOT_DESCRIPTION = (
     "Hello, I am Sheldon. A theoretical physicist at Caltech with a B.S, M.S, and Ph.D from East Texas Tech + a Ph.D from Caltech all before I turned 16. " \
     "If you have a question about computer science, math, or physics, please do ask as I would be glad to elevate your mind although it would never reach an IQ as high as mine." \

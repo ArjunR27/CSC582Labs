@@ -9,7 +9,6 @@ Data Source
 - a geeky/tech ontology
 """
 import wikipedia
-import random
 import spacy
 from dotenv import load_dotenv
 import os
@@ -63,8 +62,7 @@ class Sheldon():
         for i in range(0, len(msg), max_len):
             self.conn.privmsg(self.channel, msg[i:i + max_len])
     
-    def ask_llm(self, prompt):
-        context = prompt
+    def ask_llm(self, context, query):
         response = client.chat.completions.create(
             model='llama-3.1-8b-instant',
             messages=[
@@ -75,13 +73,15 @@ class Sheldon():
                         - You volunteer random information about random geeky subjects
                         - You want to be the center of attention and particularly hates two other users talking to each other that ignore him
                         - Snide put downs on intelligence
+                        - Keep your response to one short paragraph
 
-                        Specifically your information should come from the following context: {context}
+                        Answer using only the following Wikipedia context:
+                        {context}
                     """,
                 },
                 {
                     "role": "user",
-                    "content": prompt,
+                    "content": query,
                 },
             ],
         )
@@ -141,31 +141,99 @@ class Sheldon():
 
     def fetch_wiki_fact(self, topic):
         try:
-            summary = wikipedia.summary(topic, sentences=10, auto_suggest=False)
+            results = wikipedia.search(topic)
+            if not results:
+                return None
+
+            page = wikipedia.page(results[0], auto_suggest=False)
+            return {
+                "title": page.title,
+                "url": page.url,
+                "summary": wikipedia.summary(page.title, sentences=5, auto_suggest=False),
+                "content": page.content,
+            }
         except wikipedia.exceptions.DisambiguationError as e:
             try:
-                summary = wikipedia.summary(e.options[0], sentences=10, auto_suggest=False)
+                page = wikipedia.page(e.options[0], auto_suggest=False)
+                return {
+                    "title": page.title,
+                    "url": page.url,
+                    "summary": wikipedia.summary(page.title, sentences=5, auto_suggest=False),
+                    "content": page.content,
+                }
             except Exception:
                 return None
         except Exception:
             return None
-        sentences = [s.strip() for s in summary.split(".") if len(s.strip()) > 30]
-        if len(sentences) < 3:
+
+    def wiki_extract_from_query(self, query, wiki_text, chunk_size=3, top_k=2):
+        if not wiki_text or not query:
             return None
-        start = random.randint(0, max(0, len(sentences) - 3))
-        chunk = sentences[start:start + random.randint(3, 4)]
-        return ". ".join(chunk) + "."
+
+        doc = nlp(wiki_text)
+
+        # create sentences
+        sentences = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
+        if not sentences:
+            return None
+
+        # create chunks, groups of 3 sentences
+        chunks = []
+        for i in range(0, len(sentences), chunk_size):
+            chunk = " ".join(sentences[i:i + chunk_size]).strip()
+            if len(chunk) >= 80:
+                chunks.append(chunk)
+
+        if not chunks:
+            return None
+
+        query_doc = nlp(query)
+        scored_chunks = []
+
+        # keep only main query terms
+
+        query_terms = {token.lemma_.lower() for token in query_doc if token.is_alpha and not token.is_stop}
+
+        for chunk in chunks:
+            chunk_doc = nlp(chunk)
+
+            # sim score between query doc and chunk doc
+            sim_score = query_doc.similarity(chunk_doc) if query_doc.has_vector and chunk_doc.has_vector else 0.0
+
+            final_score = sim_score
+
+            scored_chunks.append((final_score, chunk))
+
+        scored_chunks.sort(key=lambda item: item[0], reverse=True)
+        best_chunks = [chunk for _, chunk in scored_chunks[:top_k]]
+        top_score = scored_chunks[0][0] if scored_chunks else 0.0
+        return {
+            "context": "\n\n".join(best_chunks),
+            "score": top_score,
+        }
 
     def generate_wiki_response(self, text):
+        min_extract_score = 0.30
         topic = self.extract_topic(text)
-        print(topic)
         if topic:
-            fact = self.fetch_wiki_fact(topic)
-            print(fact)
-            # Its taking hella long to generate
-            # if fact:
-            #     return self.ask_llm(fact)
-            return self.say(fact)
+            article = self.fetch_wiki_fact(topic)
+        else:
+            article = None
+
+        if article:
+            extracted = self.wiki_extract_from_query(text, article.get("content", ""))
+            context = None
+
+            if extracted and extracted["score"] >= min_extract_score:
+                context = extracted["context"]
+            if not context:
+                context = article.get("summary", "")
+
+            llm_response = self.ask_llm(context, text)
+            if llm_response:
+                return self.say(llm_response)
+            response = f"{article['title']}: {context}"
+            return self.say(response)
         return "You don't know what you're talking to why would I even respond to such low IQ. "
     
     def personality_tick(self):

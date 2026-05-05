@@ -1,0 +1,9 @@
+irc
+wikipedia
+spacy
+python-dotenv
+groq
+nltk
+transformers
+torch
+numpy

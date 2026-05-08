@@ -106,7 +106,8 @@ class PersonalityBot(SingleServerIRCBot):
                     if wiki_text:
                         fact = self.current_personality.fact_extractor(wiki_text)
                         if fact:
-                            return fact
+                            response = self.current_personality.ask_llm(fact, "Share one of these facts as if you are interrupting a conversation and show off your knowledge")
+                            return response if response else fact
             except Exception:
                 pass
         return "did you know 2 + 2 = 4?"

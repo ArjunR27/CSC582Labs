@@ -207,30 +207,55 @@ class Sheldon():
         return outputs.last_hidden_state[:, 0, :].squeeze().numpy()
     
     def _is_clean_sentence(self, text):
-        """Return False for sentences with newlines, LaTeX markup, or other noise."""
+        """Return False for sentences with newlines, LaTeX markup, section headers, or other noise."""
         if '\n' in text:
             return False
         if '{\\displaystyle' in text or '\\displaystyle' in text:
             return False
         if text.count('{') + text.count('}') > 4:
             return False
+        # Skip bare section header lines (e.g. "== History ==")
+        if re.match(r'^==\s*.+\s*==$', text):
+            return False
         return True
+
+    def _strip_appendix(self, content):
+        off_topic_headers = [
+            # Standard appendix sections
+            "\n== See also ==", "\n== References ==", "\n== External links ==",
+            "\n== Notes ==", "\n== Further reading ==", "\n== Bibliography ==",
+            "\n== Citations ==", "\n== Footnotes ==", "\n== Explanatory notes ==",
+            # Noisy body sections
+            "\n== In fiction ==", "\n== In popular culture ==",
+            "\n== Gallery ==", "\n== Media ==", "\n== Awards ==",
+        ]
+        earliest = len(content)
+        for header in off_topic_headers:
+            idx = content.find(header)
+            if idx != -1 and idx < earliest:
+                earliest = idx
+        return content[:earliest].strip()
+
+    def _strip_citations(self, text):
+        """Remove inline Wikipedia citation brackets like [1] or [23] from text."""
+        return re.sub(r'\[\d+\]', '', text).strip()
 
     def fact_extractor(self, wiki_text, top_n=3):
         print("Extracting Fact!")
         if not wiki_text:
             return None
 
+        wiki_text = self._strip_appendix(wiki_text)
         doc = nlp(wiki_text)
         sentences = []
         for sent in doc.sents:
-            text = sent.text.strip()
+            text = self._strip_citations(sent.text.strip())
             if len(text) > 10 and self._is_clean_sentence(text):
                 sentences.append(text)
-        
+
         if not sentences:
             return None
-    
+
         max_start = max(0, len(sentences) - 15)
         start = random.randint(0, max_start)
         chunk = sentences[start:start + 15]
@@ -260,13 +285,15 @@ class Sheldon():
         if not wiki_text or not query:
             return None
 
+        wiki_text = self._strip_appendix(wiki_text)
         doc = nlp(wiki_text)
 
-        # create sentences, skipping noisy ones (newlines, LaTeX markup)
-        sentences = [
-            sent.text.strip() for sent in doc.sents
-            if sent.text.strip() and self._is_clean_sentence(sent.text.strip())
-        ]
+        # create sentences, skipping noisy ones (newlines, LaTeX markup, section headers)
+        sentences = []
+        for sent in doc.sents:
+            text = self._strip_citations(sent.text.strip())
+            if text and self._is_clean_sentence(text):
+                sentences.append(text)
         if not sentences:
             return None
 

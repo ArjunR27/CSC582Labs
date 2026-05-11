@@ -11,6 +11,7 @@ import json
 
 # CHANNEL = "#CSC582"
 CHANNEL = "#CSC582"
+
 BOT_DESCRIPTION = (
     "Hello, I am Sheldon. A theoretical physicist at Caltech with a B.S, M.S, and Ph.D from East Texas Tech + a Ph.D from Caltech all before I turned 16. " \
     "If you have a question about computer science, math, or physics, please do ask as I would be glad to elevate your mind although it would never reach an IQ as high as mine." \
@@ -34,6 +35,8 @@ class PersonalityBot(SingleServerIRCBot):
         # Tracks users the bot greeted first so we don't echo their response back.
         self.bot_initiated_greetings = set()
 
+        self.hello_users = set()
+    
     def on_welcome(self, conn, event):
         self.conn = conn
         conn.join(self.channel)
@@ -50,9 +53,27 @@ class PersonalityBot(SingleServerIRCBot):
     def _personality_tick(self):
         interjected = self.check_and_interject_bot_to_bot()
         if not interjected and self.current_personality:
-            self.current_personality.personality_tick()
+            # After interject check fails:
+            # 70% chance = random fact, 30% chance = greeting
+            if random.random() < 0.70:
+                self.current_personality.personality_tick()
+            else:
+                self.proactive_greeting_tick()
         self._schedule_tick()
 
+    def proactive_greeting_tick(self):
+        if self.channel not in self.channels:
+            return
+        users = self.channels[self.channel].users()
+        candidates = [
+            user for user in users
+            if user.lower() != self.nickname.lower() and user.lower() not in self.hello_users
+        ]
+        if not candidates:
+            return
+        target = random.choice(candidates)
+        self.hello_users.add(target.lower())
+        self.conn.privmsg(self.channel, f"{target}: hello")
     def check_and_interject_bot_to_bot(self):
         # Scan a short recent window for two users addressing each other.
         recent = self.get_recent_channel_messages(20)
@@ -251,6 +272,13 @@ class PersonalityBot(SingleServerIRCBot):
                 # If the chatbot itself had initiated the greeting, it must not respond to the response.
                 "hello": self.handle_hello,
             }
+
+            # Prevent repeated hello loops: once a user has exchanged hello with the bot,
+            # ignore future hello commands from that user.
+            if command_name == "hello":
+                if author.lower() in self.hello_users:
+                    return
+                self.hello_users.add(author.lower())
 
             if command_name in BASE_COMMANDS:
                 BASE_COMMANDS[command_name](conn, self.channel, author)

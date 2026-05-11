@@ -10,7 +10,8 @@ import json
 
 
 # CHANNEL = "#CSC582"
-CHANNEL = "#CSC582Test"
+CHANNEL = "#CSC582"
+
 BOT_DESCRIPTION = (
     "Hello, I am Sheldon. A theoretical physicist at Caltech with a B.S, M.S, and Ph.D from East Texas Tech + a Ph.D from Caltech all before I turned 16. " \
     "If you have a question about computer science, math, or physics, please do ask as I would be glad to elevate your mind although it would never reach an IQ as high as mine." \
@@ -31,6 +32,9 @@ class PersonalityBot(SingleServerIRCBot):
         self.channel_history = deque(maxlen=300)
         self.user_histories = defaultdict(lambda: deque(maxlen=50))
         self.last_seen = {}
+        # Tracks users the bot greeted first so we don't echo their response back.
+        self.bot_initiated_greetings = set()
+
         self.hello_users = set()
     
     def on_welcome(self, conn, event):
@@ -43,7 +47,7 @@ class PersonalityBot(SingleServerIRCBot):
     # will change depending on the current personality
     def _schedule_tick(self):
         # can change the delay
-        delay = random.uniform(5, 10)
+        delay = random.uniform(30, 60)
         self.reactor.scheduler.execute_after(delay, self._personality_tick)
 
     def _personality_tick(self):
@@ -123,7 +127,8 @@ class PersonalityBot(SingleServerIRCBot):
                     if wiki_text:
                         fact = self.current_personality.fact_extractor(wiki_text)
                         if fact:
-                            return fact
+                            response = self.current_personality.ask_llm(fact, "Share one of these facts as if you are interrupting a conversation and show off your knowledge")
+                            return response if response else fact
             except Exception:
                 pass
         return "did you know 2 + 2 = 4?"
@@ -179,8 +184,29 @@ class PersonalityBot(SingleServerIRCBot):
         else:
             conn.privmsg(channel, f"{author}: No users found.")
     
+    def initiate_greeting_to_random_user(self):
+        """Pick a random channel member and say hello first.
+
+        The greeted user's nick is recorded in bot_initiated_greetings so that
+        when they reply with 'hello', handle_hello knows to stay silent (the
+        bot already opened that exchange and must not keep it going).
+        """
+        csc_channel = self.channels.get(self.channel)
+        if not csc_channel:
+            return
+        users = [u for u in csc_channel.users() if u != self.nickname]
+        if not users:
+            return
+        target = random.choice(users)
+        self.conn.privmsg(self.channel, f"Hello {target}!")
+        self.bot_initiated_greetings.add(target.lower())
+
     def handle_hello(self, conn, channel, author):
-        conn.privmsg(channel, f"Hello {author}, please stop bothering me. I'mm currently trying to solve the EPR Paradox.")
+        # If the bot said hello first, the user is just replying — don't respond.
+        if author.lower() in self.bot_initiated_greetings:
+            self.bot_initiated_greetings.discard(author.lower())
+            return
+        conn.privmsg(channel, f"Hello {author}, please stop bothering me. I'm currently trying to solve the EPR Paradox.")
 
     def get_recent_channel_messages(self, n=20):
         return list(self.channel_history)[-n:]

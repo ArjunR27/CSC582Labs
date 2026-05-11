@@ -9,8 +9,8 @@ import os
 import json
 
 
-# CHANNEL = "#CSC582"
 CHANNEL = "#CSC582"
+# CHANNEL = "#CSC582TestTest"
 BOT_DESCRIPTION = (
     "Hello, I am Sheldon. A theoretical physicist at Caltech with a B.S, M.S, and Ph.D from East Texas Tech + a Ph.D from Caltech all before I turned 16. " \
     "If you have a question about computer science, math, or physics, please do ask as I would be glad to elevate your mind although it would never reach an IQ as high as mine." \
@@ -53,6 +53,17 @@ class PersonalityBot(SingleServerIRCBot):
             self.current_personality.personality_tick()
         self._schedule_tick()
 
+    def safe_privmsg(self, target, text):
+        # IRC forbids CR/LF inside messages; collapse newlines to spaces.
+        text = text.replace('\r', '').replace('\n', ' ')
+        # IRC hard limit: 512 bytes including CR/LF.
+        # Overhead: "PRIVMSG {target} :\r\n" → leave 450 bytes for text to be safe.
+        max_len = 450
+        encoded = text.encode('utf-8')
+        if len(encoded) > max_len:
+            text = encoded[:max_len].decode('utf-8', errors='ignore').rstrip() + '...'
+        self.conn.privmsg(target, text)
+
     def check_and_interject_bot_to_bot(self):
         # Scan a short recent window for two users addressing each other.
         recent = self.get_recent_channel_messages(20)
@@ -77,7 +88,7 @@ class PersonalityBot(SingleServerIRCBot):
         user = random.choice(list(chosen_pair))
         recipient = chosen_pair[0] if chosen_pair[1] == user else chosen_pair[1]
         fact = self.random_fact()
-        self.conn.privmsg(self.channel, f"Hey {user}, stop talking to {recipient}. {fact}")
+        self.safe_privmsg(self.channel, f"Hey {user}, stop talking to {recipient}. {fact}")
         if self.current_personality and self.current_personality.get_name() == 'sheldon':
             self.current_personality.register_activity()
 
@@ -164,12 +175,6 @@ class PersonalityBot(SingleServerIRCBot):
             conn.privmsg(channel, f"{author}: No users found.")
     
     def initiate_greeting_to_random_user(self):
-        """Pick a random channel member and say hello first.
-
-        The greeted user's nick is recorded in bot_initiated_greetings so that
-        when they reply with 'hello', handle_hello knows to stay silent (the
-        bot already opened that exchange and must not keep it going).
-        """
         csc_channel = self.channels.get(self.channel)
         if not csc_channel:
             return
@@ -181,7 +186,6 @@ class PersonalityBot(SingleServerIRCBot):
         self.bot_initiated_greetings.add(target.lower())
 
     def handle_hello(self, conn, channel, author):
-        # If the bot said hello first, the user is just replying — don't respond.
         if author.lower() in self.bot_initiated_greetings:
             self.bot_initiated_greetings.discard(author.lower())
             return
@@ -233,7 +237,14 @@ class PersonalityBot(SingleServerIRCBot):
             if normalized_command in {"what do you do", "so what do you do"}:
                 self.handle_bot_description(conn, self.channel, author)
                 return
-            
+
+            GREETING_WORDS = {"hello", "hi", "hey", "howdy", "greetings", "sup", "yo", "hiya", "heya", "helo"}
+            # Strip trailing punctuation so "hello!" and "hi!!!" match
+            bare_command = re.sub(r"[^a-z0-9\s]", "", command_lower).strip()
+            if bare_command in GREETING_WORDS:
+                self.handle_bot_description(conn, self.channel, author)
+                return
+
             # Get first word for single-word commands
             parts = command_text.split(None, 1)
             command_name = parts[0].lower()
@@ -269,6 +280,5 @@ class PersonalityBot(SingleServerIRCBot):
 
 
 if __name__ == "__main__":
-    # The chatbot’s name must end with the string “-bot”.
     bot_nickname = "Sheldon-AS-bot"
     PersonalityBot(CHANNEL, bot_nickname).start()

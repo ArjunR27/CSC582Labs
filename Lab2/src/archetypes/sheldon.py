@@ -207,7 +207,6 @@ class Sheldon():
         return outputs.last_hidden_state[:, 0, :].squeeze().numpy()
     
     def _is_clean_sentence(self, text):
-        """Return False for sentences with newlines, LaTeX markup, section headers, or other noise."""
         if '\n' in text:
             return False
         if '{\\displaystyle' in text or '\\displaystyle' in text:
@@ -237,7 +236,6 @@ class Sheldon():
         return content[:earliest].strip()
 
     def _strip_citations(self, text):
-        """Remove inline Wikipedia citation brackets like [1] or [23] from text."""
         return re.sub(r'\[\d+\]', '', text).strip()
 
     def fact_extractor(self, wiki_text, top_n=3):
